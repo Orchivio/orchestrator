@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"time"
 
@@ -63,8 +64,11 @@ func migrateUp(databaseURL string) error {
 	if err != nil {
 		return fmt.Errorf("migration source: %w", err)
 	}
-	// golang-migrate's pgx/v5 driver registers the "pgx5" scheme.
-	m, err := migrate.NewWithSourceInstance("iofs", src, "pgx5"+databaseURL[len("postgres"):])
+	migrateURL, err := migrationURL(databaseURL)
+	if err != nil {
+		return err
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", src, migrateURL)
 	if err != nil {
 		return fmt.Errorf("migrate init: %w", err)
 	}
@@ -73,6 +77,17 @@ func migrateUp(databaseURL string) error {
 		return fmt.Errorf("migrate up: %w", err)
 	}
 	return nil
+}
+
+// migrationURL rewrites a postgres URL to the "pgx5" scheme that
+// golang-migrate's pgx/v5 driver registers. Errors never echo the URL (password).
+func migrationURL(databaseURL string) (string, error) {
+	u, err := url.Parse(databaseURL)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return "", errors.New("invalid database URL: want postgres:// or postgresql://")
+	}
+	u.Scheme = "pgx5"
+	return u.String(), nil
 }
 
 // orNil maps "no rows" to (nil, nil), the port convention for "not found".
@@ -232,8 +247,17 @@ func mapRows[T, R any](rows []T, err error, conv func(T) R) ([]R, error) {
 }
 
 func runOrNil(row db.Run, err error) (*router.Run, error) {
-	r, err := orNil(row, err, toRun)
-	return r, err
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	r, err := toRun(row)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 func jsonArray(items []string) ([]byte, error) {
@@ -252,11 +276,19 @@ func toInput(i db.Input) router.Input {
 		Body: i.Body, Trigger: classifier.Trigger(i.Trigger), RunID: i.RunID, CreatedAt: i.CreatedAt.UTC()}
 }
 
-func toRun(r db.Run) router.Run {
+func toRun(r db.Run) (router.Run, error) {
+	repos, err := stringArray(r.Repos)
+	if err != nil {
+		return router.Run{}, fmt.Errorf("run %s repos: %w", r.ID, err)
+	}
+	prURLs, err := stringArray(r.PrUrls)
+	if err != nil {
+		return router.Run{}, fmt.Errorf("run %s pr_urls: %w", r.ID, err)
+	}
 	return router.Run{ID: r.ID, Tenant: r.TenantID, ConversationID: r.ConversationID, Project: r.Project,
-		TicketRef: r.TicketRef, Kind: r.Kind, State: r.State, Repos: stringArray(r.Repos), Branch: r.Branch,
-		Prompt: r.Prompt, Result: r.Result, PRURLs: stringArray(r.PrUrls), SessionID: r.SessionID,
-		LeaseOwner: r.LeaseOwner, LeaseUntil: utcPtr(r.LeaseUntil), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
+		TicketRef: r.TicketRef, Kind: r.Kind, State: r.State, Repos: repos, Branch: r.Branch,
+		Prompt: r.Prompt, Result: r.Result, PRURLs: prURLs, SessionID: r.SessionID,
+		LeaseOwner: r.LeaseOwner, LeaseUntil: utcPtr(r.LeaseUntil), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}, nil
 }
 
 func utcPtr(t *time.Time) *time.Time {
@@ -267,9 +299,10 @@ func utcPtr(t *time.Time) *time.Time {
 	return &u
 }
 
-// stringArray decodes a JSON array column; the schema guarantees valid arrays.
-func stringArray(raw []byte) []string {
+func stringArray(raw []byte) ([]string, error) {
 	out := []string{}
-	_ = json.Unmarshal(raw, &out)
-	return out
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

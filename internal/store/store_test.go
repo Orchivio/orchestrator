@@ -268,3 +268,40 @@ func TestNewRunHasEmptyArraysNotNull(t *testing.T) {
 		t.Fatalf("GetRun = %+v, %v; want non-nil empty slices", got, err)
 	}
 }
+
+func TestMigrationURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"postgres://u:p@h:5432/d?sslmode=disable":   "pgx5://u:p@h:5432/d?sslmode=disable",
+		"postgresql://u:p@h:5432/d?sslmode=disable": "pgx5://u:p@h:5432/d?sslmode=disable",
+	} {
+		got, err := migrationURL(in)
+		if err != nil || got != want {
+			t.Errorf("migrationURL(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "pg", "mysql://u:secret@h/d", "http://h"} {
+		if _, err := migrationURL(in); err == nil {
+			t.Errorf("migrationURL(%q) = nil error, want error", in)
+		}
+	}
+}
+
+func TestUpdateRunUnknownIDFails(t *testing.T) {
+	s := newStore(t)
+	err := s.UpdateRun(context.Background(), router.Run{ID: uuid.New(), State: router.StateQueued})
+	if err == nil {
+		t.Fatal("want error for unknown run")
+	}
+}
+
+func TestAppendEventUnmarshalablePayloadFailsWithoutRow(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	c := newConversation(t, s)
+	r := newRun(t, s, c, router.StateRunning, base)
+	if err := s.AppendEvent(ctx, c.Tenant, r.ID, "message", make(chan int)); err == nil {
+		t.Fatal("want marshal error")
+	}
+	if evs, err := s.ListEvents(ctx, r.ID); err != nil || len(evs) != 0 {
+		t.Fatalf("events = %+v, %v; want none", evs, err)
+	}
+}
