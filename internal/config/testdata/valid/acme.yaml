@@ -1,0 +1,18 @@
+tenant: acme
+tracker: { name: linear, address: localhost:7101 }
+codeHost: { name: github, address: localhost:7201 }
+profiles:
+  default: { runtime: claude-code, model: claude-sonnet-5-5, maxDuration: 20m, instructions: "Antworte auf Deutsch." }
+projects:
+  - name: demo
+    trackerKey: ORC
+    profile: default
+    repos:
+      - { slug: soemii/orchivio-playground, baseBranch: main, allowedPaths: [""] }
+    classifier:
+      taskLabels: ["orchivio:aufgabe"]
+      questionLabels: ["orchivio:frage"]
+      repoLabels: { "repo:playground": soemii/orchivio-playground }
+      defaultRepo: soemii/orchivio-playground
+    roles: { questions: ["you@example.com"], tasks: ["you@example.com"] }
+    maxDiffLines: 500
