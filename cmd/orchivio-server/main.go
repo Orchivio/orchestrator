@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -52,13 +53,15 @@ func env(key, def string) string {
 	return def
 }
 
-func run(ctx context.Context, log *slog.Logger) error {
+func run(parent context.Context, log *slog.Logger) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
 	dbURL, configDir := os.Getenv("DATABASE_URL"), os.Getenv("ORCHIVIO_CONFIG_DIR")
 	if dbURL == "" || configDir == "" {
 		return errors.New("DATABASE_URL and ORCHIVIO_CONFIG_DIR are required")
 	}
-	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", ":7000"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8080")
-	publicURL := env("ORCHIVIO_PUBLIC_URL", "http://localhost:8080")
+	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", ":7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
+	publicURL := env("ORCHIVIO_PUBLIC_URL", "http://localhost:8088")
 
 	cfg, err := config.NewSync(configDir, configReloadInterval, log)
 	if err != nil {
@@ -73,6 +76,10 @@ func run(ctx context.Context, log *slog.Logger) error {
 	reg := adapters.NewRegistry(cfg, log)
 	defer reg.Close()
 
+	var background sync.WaitGroup
+	defer background.Wait() // runs before reg.Close and db.Close
+	defer cancel()
+
 	rep := reporter.New(func(t string) reporter.TrackerClient { return reg.TrackerFor(t) }, cfg, publicURL)
 	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
 	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, defaultLease, publicURL)
@@ -86,19 +93,31 @@ func run(ctx context.Context, log *slog.Logger) error {
 	hs := &http.Server{Addr: httpAddr, Handler: httpapi.NewTimeline(db), ReadHeaderTimeout: 10 * time.Second}
 
 	errc := make(chan error, 2)
-	go cfg.Run(ctx)
+	background.Add(2)
+	go func() { defer background.Done(); cfg.Run(ctx) }()
+	go func() { defer background.Done(); adapters.Run(ctx, cfg, reg, rt.Handle, log) }()
 	go func() { errc <- gs.Serve(lis) }()
 	go func() { errc <- hs.ListenAndServe() }()
-	go adapters.Run(ctx, cfg, reg, rt.Handle, log)
 	log.Info("server started", "grpc", grpcAddr, "http", httpAddr)
 
 	select {
 	case err = <-errc:
-		err = fmt.Errorf("serve: %w", err)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			err = fmt.Errorf("serve: %w", err)
+		} else {
+			err = nil
+		}
 	case <-ctx.Done():
 	}
-	gs.GracefulStop()
-	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
+	cancel()
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutCancel()
+	stopped := make(chan struct{})
+	go func() { gs.GracefulStop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-shutCtx.Done():
+		gs.Stop()
+	}
 	return errors.Join(err, hs.Shutdown(shutCtx))
 }

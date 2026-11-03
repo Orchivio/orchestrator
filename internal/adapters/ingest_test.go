@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -128,5 +129,43 @@ func TestRegistryRefusesWrongContractVersion(t *testing.T) {
 	}
 	if _, err := reg.Tracker().GetTicket(context.Background(), "nope", "ORC-1"); err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("unknown tenant error = %v", err)
+	}
+}
+
+func TestIngestContinuesAfterHandlerError(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg, err := config.NewSync("../../dev/config", time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	pluginv1.RegisterTrackerAdapterServer(srv, &fakeTracker{})
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	reg := NewRegistry(cfg, log)
+	reg.dialer = func(string) (*grpc.ClientConn, error) {
+		return grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	t.Cleanup(reg.Close)
+
+	got := make(chan string, 3)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go run(ctx, cfg, reg, func(_ context.Context, _ string, ev *pluginv1.TrackerEvent) error {
+		got <- ev.GetExternalId()
+		return errors.New("boom")
+	}, log, time.Millisecond, 10*time.Millisecond)
+	for _, want := range []string{"e1", "e2", "e3"} {
+		select {
+		case g := <-got:
+			if g != want {
+				t.Fatalf("got %s, want %s", g, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timeout waiting for %s", want)
+		}
 	}
 }
