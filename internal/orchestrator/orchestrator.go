@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,10 @@ var (
 	ErrInvalidOutcome = errors.New("invalid run outcome")
 	// ErrUnknownRun is returned when the run id does not exist.
 	ErrUnknownRun = errors.New("unknown run")
+	// ErrBranchMismatch is returned when a pushed branch is not the run's branch.
+	ErrBranchMismatch = errors.New("pushed branch does not match the run branch")
+	// ErrInvalidEvent is returned for event types outside the normalized set.
+	ErrInvalidEvent = errors.New("invalid event type")
 )
 
 const (
@@ -46,6 +51,9 @@ const (
 	redactedFallbackFmt = `{"type":%q,"redacted":true}`
 )
 
+var eventTypes = []string{"run.started", "tool.called", "tool.finished", "file.changed", "message",
+	"question.asked", "usage", "run.finished"}
+
 // Orchestrator implements the worker-facing run lifecycle.
 type Orchestrator struct {
 	cfg       *config.Sync
@@ -57,6 +65,8 @@ type Orchestrator struct {
 	now       func() time.Time
 	leaseFor  time.Duration
 	publicURL string
+	// ponytail: global lock, conditional UPDATE ... WHERE state='running' if more than one server process
+	completeMu sync.Mutex
 }
 
 // New wires the orchestrator. leaseFor is the lease length used when the
@@ -151,6 +161,9 @@ func (o *Orchestrator) RecordEvent(ctx context.Context, workerID string, runID u
 	if err != nil {
 		return err
 	}
+	if !slices.Contains(eventTypes, ev.GetType()) {
+		return fmt.Errorf("run %s: %w: %q", runID, ErrInvalidEvent, ev.GetType())
+	}
 	raw, err := protojson.Marshal(ev)
 	if err != nil {
 		return fmt.Errorf("marshal event of run %s: %w", runID, err)
@@ -184,14 +197,17 @@ func (o *Orchestrator) owned(ctx context.Context, workerID string, runID uuid.UU
 	if run == nil {
 		return nil, fmt.Errorf("run %s: %w", runID, ErrUnknownRun)
 	}
-	if run.LeaseOwner != workerID || (run.State != router.StateRunning && run.State != router.StatePushing) {
+	if run.LeaseOwner != workerID || run.State != router.StateRunning {
 		return nil, ErrNotLeaseOwner
 	}
 	return run, nil
 }
 
-// Complete finishes a run according to the worker's outcome.
+// Complete finishes a run according to the worker's outcome. Agent text is
+// redacted once here and only the redacted form is stored or forwarded.
 func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRequest) error {
+	o.completeMu.Lock()
+	defer o.completeMu.Unlock()
 	runID, err := uuid.Parse(req.GetRunId())
 	if err != nil {
 		return fmt.Errorf("run id %q: %w", req.GetRunId(), err)
@@ -201,15 +217,18 @@ func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRe
 		return err
 	}
 	run.SessionID = req.GetSessionId()
+	text := redact.String(req.GetText())
 	switch req.GetOutcome() {
 	case workerv1.CompleteRunRequest_ANSWERED:
-		err = o.finish(ctx, run, router.StateSucceeded, req.GetText(), milestoneResult, req.GetText())
+		err = o.finish(ctx, run, router.StateSucceeded, text, milestoneResult, text)
 	case workerv1.CompleteRunRequest_PUSHED:
-		err = o.completePushed(ctx, run, req)
+		if err = validatePushed(run, req); err == nil {
+			err = o.completePushed(ctx, run, req.GetPushedBranches(), text)
+		}
 	case workerv1.CompleteRunRequest_WAITING:
-		err = o.finish(ctx, run, router.StateWaitingForInput, req.GetText(), milestoneQuestion, req.GetText())
+		err = o.finish(ctx, run, router.StateWaitingForInput, text, milestoneQuestion, text)
 	case workerv1.CompleteRunRequest_FAILED:
-		err = o.finish(ctx, run, router.StateFailed, req.GetText(), milestoneResult, abortedPrefix+req.GetText())
+		err = o.finish(ctx, run, router.StateFailed, text, milestoneResult, abortedPrefix+text)
 	default:
 		return fmt.Errorf("run %s: %w: %v", runID, ErrInvalidOutcome, req.GetOutcome())
 	}
@@ -224,27 +243,46 @@ func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRe
 	return nil
 }
 
-func (o *Orchestrator) completePushed(ctx context.Context, run *router.Run, req *workerv1.CompleteRunRequest) error {
+func validatePushed(run *router.Run, req *workerv1.CompleteRunRequest) error {
+	if run.Kind != kindTask {
+		return ErrWriteNotAllowed
+	}
+	if len(req.GetPushedBranches()) == 0 {
+		return fmt.Errorf("run %s: %w: PUSHED without branches", run.ID, ErrInvalidOutcome)
+	}
+	for slug, branch := range req.GetPushedBranches() {
+		if branch != run.Branch {
+			return fmt.Errorf("run %s repo %s: %w", run.ID, slug, ErrBranchMismatch)
+		}
+	}
+	return nil
+}
+
+func (o *Orchestrator) completePushed(ctx context.Context, run *router.Run, branches map[string]string, text string) error {
 	run.State = router.StatePushing
-	run.Result = req.GetText()
+	run.Result = text
 	if err := o.store.UpdateRun(ctx, *run); err != nil {
 		return fmt.Errorf("update run %s: %w", run.ID, err)
 	}
 	o.recordState(ctx, run)
-	urls, err := o.openPullRequests(ctx, run, req)
-	if err != nil {
-		return o.finish(ctx, run, router.StateFailed, err.Error(), milestoneResult, abortedPrefix+err.Error())
-	}
+	urls, err := o.openPullRequests(ctx, run, branches, text)
 	run.PRURLs = urls
-	return o.finish(ctx, run, router.StateSucceeded, req.GetText(), milestoneResult, donePrefix+strings.Join(urls, "\n"))
+	if err != nil {
+		reason := redact.String(err.Error())
+		if len(urls) > 0 {
+			reason += "\nBereits geöffnet: " + strings.Join(urls, "\n")
+		}
+		return o.finish(ctx, run, router.StateFailed, reason, milestoneResult, abortedPrefix+reason)
+	}
+	return o.finish(ctx, run, router.StateSucceeded, text, milestoneResult, donePrefix+strings.Join(urls, "\n"))
 }
 
-func (o *Orchestrator) openPullRequests(ctx context.Context, run *router.Run, req *workerv1.CompleteRunRequest) ([]string, error) {
+func (o *Orchestrator) openPullRequests(ctx context.Context, run *router.Run, branches map[string]string, text string) ([]string, error) {
 	_, project, _ := o.cfg.Current().ProjectFor(run.Tenant, run.Project)
 	title := run.TicketRef + ": " + o.ticketTitle(ctx, run)
-	body := req.GetText() + fmt.Sprintf("\n\n[Timeline](%s/runs/%s)", o.publicURL, run.ID)
-	slugs := make([]string, 0, len(req.GetPushedBranches()))
-	for slug := range req.GetPushedBranches() {
+	body := text + fmt.Sprintf("\n\n[Timeline](%s/runs/%s)", o.publicURL, run.ID)
+	slugs := make([]string, 0, len(branches))
+	for slug := range branches {
 		slugs = append(slugs, slug)
 	}
 	slices.Sort(slugs)
@@ -255,7 +293,7 @@ func (o *Orchestrator) openPullRequests(ctx context.Context, run *router.Run, re
 			return urls, fmt.Errorf("repo %s is not configured for project %s", slug, run.Project)
 		}
 		pr, err := o.codeHost.OpenPullRequest(ctx, run.Tenant, &pluginv1.OpenPullRequestRequest{
-			Repo: slug, Base: repo.BaseBranch, Head: req.GetPushedBranches()[slug], Title: title, Body: body})
+			Repo: slug, Base: repo.BaseBranch, Head: branches[slug], Title: title, Body: body})
 		if err != nil {
 			return urls, fmt.Errorf("open pull request in %s: %w", slug, err)
 		}

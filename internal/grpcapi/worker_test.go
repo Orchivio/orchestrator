@@ -178,3 +178,31 @@ func TestReportEventsStreamStoresAndDeniesForeign(t *testing.T) {
 		t.Fatalf("foreign stream: %v", err)
 	}
 }
+
+func TestEmptyWorkerIDInvalidArgument(t *testing.T) {
+	c, id := setup(t)
+	ctx := context.Background()
+	if _, err := c.LeaseRun(ctx, &workerv1.LeaseRunRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("LeaseRun: %v", err)
+	}
+	if _, err := c.Register(ctx, &workerv1.RegisterRequest{ContractVersion: "worker.v1"}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("Register: %v", err)
+	}
+	if _, err := c.GetRepoCredentials(ctx, &workerv1.GetRepoCredentialsRequest{RunId: id.String()}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetRepoCredentials: %v", err)
+	}
+	if _, err := c.CompleteRun(ctx, &workerv1.CompleteRunRequest{RunId: id.String()}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("CompleteRun: %v", err)
+	}
+}
+
+func TestBadEventTypeInvalidArgument(t *testing.T) {
+	c, id := setup(t)
+	ctx := context.Background()
+	_, _ = c.LeaseRun(ctx, &workerv1.LeaseRunRequest{WorkerId: "w1"})
+	stream, _ := c.ReportEvents(ctx)
+	_ = stream.Send(&workerv1.ReportEventsRequest{RunId: id.String(), WorkerId: "w1", Event: &pluginv1.AgentEvent{Type: "evil"}})
+	if _, err := stream.CloseAndRecv(); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("bad event: %v", err)
+	}
+}

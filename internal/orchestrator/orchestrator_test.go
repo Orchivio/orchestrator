@@ -20,6 +20,8 @@ import (
 	workerv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1"
 )
 
+const branch = "orchivio/orc-12-abcd"
+
 const cfgYAML = `tenant: acme
 tracker: { name: linear, address: localhost:7101 }
 codeHost: { name: github, address: localhost:7201 }
@@ -82,6 +84,7 @@ type fakeHost struct {
 	credCalls int
 	prs       []*pluginv1.OpenPullRequestRequest
 	prErr     error
+	failRepo  string
 }
 
 func (h *fakeHost) IssueRepoCredentials(context.Context, string, []string, bool) (*pluginv1.RepoCredentials, error) {
@@ -91,6 +94,9 @@ func (h *fakeHost) IssueRepoCredentials(context.Context, string, []string, bool)
 func (h *fakeHost) OpenPullRequest(_ context.Context, _ string, req *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error) {
 	if h.prErr != nil {
 		return nil, h.prErr
+	}
+	if req.Repo == h.failRepo {
+		return nil, errors.New("422 boom")
 	}
 	h.prs = append(h.prs, req)
 	return &pluginv1.PullRequest{Url: "https://gh/" + req.Repo + "/pull/1"}, nil
@@ -133,7 +139,7 @@ func newFixture(t *testing.T, kind string) *fixture {
 	f := &fixture{s: &fakeStore{runs: map[uuid.UUID]*router.Run{}}, host: &fakeHost{}, rep: &fakeReporter{},
 		now: time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)}
 	f.run = router.Run{ID: uuid.New(), Tenant: "acme", ConversationID: uuid.New(), Project: "ORC", TicketRef: "ORC-12",
-		Kind: kind, State: router.StateQueued, Repos: []string{"soemii/a", "soemii/b"}, Branch: "orchivio/orc-12-abcd", Prompt: "do it"}
+		Kind: kind, State: router.StateQueued, Repos: []string{"soemii/a", "soemii/b"}, Branch: branch, Prompt: "do it"}
 	r := f.run
 	f.s.runs[r.ID] = &r
 	f.s.queue = []uuid.UUID{r.ID}
@@ -265,7 +271,7 @@ func TestCompleteAnsweredPostsResult(t *testing.T) {
 func TestCompletePushedOpensPRAndReportsLink(t *testing.T) {
 	f := newFixture(t, "task")
 	f.lease(t)
-	err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "done it", map[string]string{"soemii/b": "br-b", "soemii/a": "br-a"})
+	err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "done it", map[string]string{"soemii/b": branch, "soemii/a": branch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +279,7 @@ func TestCompletePushedOpensPRAndReportsLink(t *testing.T) {
 		t.Fatalf("prs = %v", f.host.prs)
 	}
 	pr := f.host.prs[0]
-	if pr.Repo != "soemii/a" || pr.Head != "br-a" || pr.Base != "main" || pr.Title != "ORC-12: Fix it" ||
+	if pr.Repo != "soemii/a" || pr.Head != branch || pr.Base != "main" || pr.Title != "ORC-12: Fix it" ||
 		!strings.Contains(pr.Body, "done it") || !strings.Contains(pr.Body, "[Timeline](https://orc.example/runs/"+f.run.ID.String()+")") {
 		t.Errorf("pr = %v", pr)
 	}
@@ -297,7 +303,7 @@ func TestCompletePRFailureMarksFailed(t *testing.T) {
 	f := newFixture(t, "task")
 	f.lease(t)
 	f.host.prErr = errors.New("422 boom")
-	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", map[string]string{"soemii/a": "br"}); err != nil {
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", map[string]string{"soemii/a": branch}); err != nil {
 		t.Fatal(err)
 	}
 	if f.state() != router.StateFailed {
@@ -387,6 +393,117 @@ func TestRecordEventForeignWorkerDenied(t *testing.T) {
 	n := len(f.s.events)
 	err := f.o.RecordEvent(context.Background(), "x", f.run.ID, &pluginv1.AgentEvent{Type: "message"})
 	if !errors.Is(err, ErrNotLeaseOwner) || len(f.s.events) != n {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func tokenText() (string, string) {
+	secret := "ghp_" + strings.Repeat("d", 36)
+	return secret, "see " + secret
+}
+
+func TestCompletePushedRedactsResultAndPRBody(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	secret, text := tokenText()
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, text, map[string]string{"soemii/a": branch}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(f.host.prs[0].Body, secret) || !strings.Contains(f.host.prs[0].Body, "see ****") {
+		t.Errorf("body = %s", f.host.prs[0].Body)
+	}
+	if got := f.s.runs[f.run.ID].Result; got != "see ****" {
+		t.Errorf("result = %q", got)
+	}
+}
+
+func TestCompleteFailedRedactsResult(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	secret, text := tokenText()
+	_ = f.complete("w1", workerv1.CompleteRunRequest_FAILED, text, nil)
+	if got := f.s.runs[f.run.ID].Result; strings.Contains(got, secret) || got != "see ****" {
+		t.Errorf("result = %q", got)
+	}
+	if strings.Contains(f.rep.milestones[0], secret) {
+		t.Errorf("milestone = %q", f.rep.milestones[0])
+	}
+}
+
+func assertUnchanged(t *testing.T, f *fixture) {
+	t.Helper()
+	if len(f.host.prs) != 0 || f.state() != router.StateRunning || len(f.rep.milestones) != 0 || len(f.followed) != 0 {
+		t.Errorf("run changed: prs=%d state=%s", len(f.host.prs), f.state())
+	}
+}
+
+func TestCompletePushedOnQuestionDenied(t *testing.T) {
+	f := newFixture(t, "question")
+	f.lease(t)
+	err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", map[string]string{"soemii/a": branch})
+	if !errors.Is(err, ErrWriteNotAllowed) {
+		t.Fatalf("err = %v", err)
+	}
+	assertUnchanged(t, f)
+}
+
+func TestCompletePushedForeignBranchRejected(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", map[string]string{"soemii/a": "main"})
+	if !errors.Is(err, ErrBranchMismatch) {
+		t.Fatalf("err = %v", err)
+	}
+	assertUnchanged(t, f)
+}
+
+func TestCompletePushedWithoutBranchesRejected(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", nil); !errors.Is(err, ErrInvalidOutcome) {
+		t.Fatalf("err = %v", err)
+	}
+	assertUnchanged(t, f)
+}
+
+func TestCompleteTwiceOpensPROnce(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	b := map[string]string{"soemii/a": branch}
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", b); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", b); !errors.Is(err, ErrNotLeaseOwner) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(f.host.prs) != 1 {
+		t.Errorf("prs = %d", len(f.host.prs))
+	}
+}
+
+func TestCompletePartialPRFailureKeepsOpenedURLs(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	f.host.failRepo = "soemii/b"
+	err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "x", map[string]string{"soemii/a": branch, "soemii/b": branch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := f.s.runs[f.run.ID]
+	if r.State != router.StateFailed || len(r.PRURLs) != 1 || r.PRURLs[0] != "https://gh/soemii/a/pull/1" {
+		t.Errorf("run = %+v", r)
+	}
+	if !strings.Contains(f.rep.milestones[0], "https://gh/soemii/a/pull/1") {
+		t.Errorf("milestone = %q", f.rep.milestones[0])
+	}
+}
+
+func TestRecordEventRejectsUnknownType(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	n := len(f.s.events)
+	err := f.o.RecordEvent(context.Background(), "w1", f.run.ID, &pluginv1.AgentEvent{Type: "evil"})
+	if !errors.Is(err, ErrInvalidEvent) || len(f.s.events) != n {
 		t.Fatalf("err = %v", err)
 	}
 }
