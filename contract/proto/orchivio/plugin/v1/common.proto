@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package orchivio.plugin.v1;
+
+option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+
+message Capabilities {
+  string contract_version = 1; // "plugin.v1"
+  string adapter_name = 2;
+  bool supports_threads = 3;
+  bool supports_status_update = 4;
+  bool supports_agent_activity = 5;
+  bool supports_session_resume = 6;
+  bool supports_webhooks = 7;
+}
+
+message GetCapabilitiesRequest {}
+
+message Actor {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+}

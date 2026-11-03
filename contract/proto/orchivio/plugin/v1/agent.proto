@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package orchivio.plugin.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+
+// Runtime-adapter messages. Transport in the walking skeleton: protojson lines over stdin/stdout.
+message RunSpec {
+  string run_id = 1;
+  string prompt = 2;
+  string model = 3;
+  string instructions = 4;
+  string resume_session_id = 5;
+  repeated string workdirs = 6; // "/work/<repo-name>"
+}
+
+message AgentEvent {
+  string type = 1; // see global constraints
+  google.protobuf.Timestamp at = 2;
+  string session_id = 3;
+  string tool_id = 4;
+  string tool_name = 5;
+  string tool_input_json = 6;
+  bool is_error = 7;
+  string path = 8; // file.changed
+  string text = 9; // message, question.asked, run.finished result
+  Usage usage = 10;
+  string status = 11; // run.finished: "success" | "error"
+  string model = 12;
+  int64 duration_ms = 13;
+}
+
+message Usage {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  int64 cache_read_tokens = 3;
+  int64 cache_write_tokens = 4;
+  // Transport value from the CLI, not used for arithmetic; stored unchanged.
+  double cost_usd = 5;
+}

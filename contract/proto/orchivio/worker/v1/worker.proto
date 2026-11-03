@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package orchivio.worker.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "orchivio/plugin/v1/agent.proto";
+import "orchivio/plugin/v1/codehost.proto";
+
+option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1;workerv1";
+
+service WorkerService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc LeaseRun(LeaseRunRequest) returns (LeaseRunResponse);
+  rpc ReportEvents(stream ReportEventsRequest) returns (ReportEventsResponse);
+  rpc GetRepoCredentials(GetRepoCredentialsRequest) returns (orchivio.plugin.v1.RepoCredentials);
+  rpc CompleteRun(CompleteRunRequest) returns (CompleteRunResponse);
+}
+
+message RegisterRequest {
+  string worker_id = 1;
+  string contract_version = 2; // "worker.v1"
+  int32 capacity = 3;
+}
+
+message RegisterResponse {}
+
+message LeaseRunRequest {
+  string worker_id = 1;
+}
+
+message LeaseRunResponse {
+  RunAssignment run = 1; // unset when nothing is pending
+}
+
+message RunAssignment {
+  string run_id = 1;
+  string tenant = 2;
+  string kind = 3;
+  string branch = 4;
+  repeated Repo repos = 5;
+  orchivio.plugin.v1.RunSpec spec = 6;
+  repeated string allowed_paths = 7;
+  int32 max_diff_lines = 8;
+  google.protobuf.Duration max_duration = 9;
+  google.protobuf.Timestamp lease_until = 10;
+  string ticket_ref = 11;
+  string ticket_title = 12;
+}
+
+message Repo {
+  string slug = 1;
+  string base_branch = 2;
+}
+
+message ReportEventsRequest {
+  string run_id = 1;
+  string worker_id = 2;
+  orchivio.plugin.v1.AgentEvent event = 3;
+}
+
+message ReportEventsResponse {}
+
+message GetRepoCredentialsRequest {
+  string run_id = 1;
+  string worker_id = 2;
+  bool write = 3;
+}
+
+message CompleteRunRequest {
+  string run_id = 1;
+  string worker_id = 2;
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    ANSWERED = 1;
+    PUSHED = 2;
+    WAITING = 3;
+    FAILED = 4;
+  }
+  Outcome outcome = 3;
+  string text = 4; // answer, question or failure reason
+  map<string, string> pushed_branches = 5; // repo slug -> branch
+  string session_id = 6;
+}
+
+message CompleteRunResponse {}

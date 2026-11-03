@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package orchivio.plugin.v1;
+
+import "orchivio/plugin/v1/common.proto";
+
+option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+
+service TrackerAdapter {
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (Capabilities);
+  rpc StreamEvents(StreamEventsRequest) returns (stream TrackerEvent);
+  rpc GetTicket(GetTicketRequest) returns (Ticket);
+  rpc PostComment(PostCommentRequest) returns (PostCommentResponse);
+}
+
+message StreamEventsRequest {}
+
+message TrackerEvent {
+  string external_id = 1; // dedup key, stable across polls
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    ASSIGNED = 1;
+    COMMENTED = 2;
+  }
+  Kind kind = 2;
+  string ticket_ref = 3;  // "ORC-12"
+  string project_key = 4; // Linear team key "ORC"
+  Actor actor = 5;
+  string body = 6; // comment text, empty on ASSIGNED
+  bool mentions_bot = 7;
+}
+
+message GetTicketRequest {
+  string ticket_ref = 1;
+}
+
+message Ticket {
+  string ticket_ref = 1;
+  string title = 2;
+  string description = 3;
+  repeated string labels = 4;
+  map<string, string> fields = 5;
+  string url = 6;
+}
+
+message PostCommentRequest {
+  string ticket_ref = 1;
+  string body = 2;
+}
+
+message PostCommentResponse {
+  string comment_id = 1;
+}

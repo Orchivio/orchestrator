@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package orchivio.plugin.v1;
+
+import "google/protobuf/timestamp.proto";
+import "orchivio/plugin/v1/common.proto";
+
+option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+
+service CodeHostAdapter {
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (Capabilities);
+  rpc IssueRepoCredentials(IssueRepoCredentialsRequest) returns (RepoCredentials);
+  rpc OpenPullRequest(OpenPullRequestRequest) returns (PullRequest);
+}
+
+message IssueRepoCredentialsRequest {
+  repeated string repos = 1; // "owner/name"
+  bool write = 2;
+}
+
+message RepoCredentials {
+  string username = 1;
+  string token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  map<string, string> clone_urls = 4; // repo -> https URL without credentials
+}
+
+message OpenPullRequestRequest {
+  string repo = 1;
+  string base = 2;
+  string head = 3;
+  string title = 4;
+  string body = 5;
+}
+
+message PullRequest {
+  string url = 1;
+  int64 number = 2;
+}
