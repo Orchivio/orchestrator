@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -21,15 +22,19 @@ import (
 const actor = "you@example.com"
 
 type fakeStore struct {
-	seen    map[string]bool
-	convs   []*Conversation
-	inputs  []*Input
-	runs    []*Run
-	events  []string
-	failAdd bool
+	seen   map[string]bool
+	convs  []*Conversation
+	inputs []*Input
+	runs   []*Run
+	events []string
+
+	markErr, addErr error
 }
 
 func (s *fakeStore) MarkInbound(_ context.Context, source, id string) (bool, error) {
+	if s.markErr != nil {
+		return false, s.markErr
+	}
 	k := source + "/" + id
 	if s.seen[k] {
 		return false, nil
@@ -40,7 +45,8 @@ func (s *fakeStore) MarkInbound(_ context.Context, source, id string) (bool, err
 func (s *fakeStore) FindConversation(_ context.Context, tenant, ref string) (*Conversation, error) {
 	for _, c := range s.convs {
 		if c.Tenant == tenant && c.TicketRef == ref {
-			return c, nil
+			cp := *c
+			return &cp, nil
 		}
 	}
 	return nil, nil
@@ -48,7 +54,8 @@ func (s *fakeStore) FindConversation(_ context.Context, tenant, ref string) (*Co
 func (s *fakeStore) GetConversation(_ context.Context, id uuid.UUID) (*Conversation, error) {
 	for _, c := range s.convs {
 		if c.ID == id {
-			return c, nil
+			cp := *c
+			return &cp, nil
 		}
 	}
 	return nil, fmt.Errorf("conversation %s not found", id)
@@ -58,6 +65,9 @@ func (s *fakeStore) CreateConversation(_ context.Context, c Conversation) error 
 	return nil
 }
 func (s *fakeStore) AddInput(_ context.Context, in Input) error {
+	if s.addErr != nil {
+		return s.addErr
+	}
 	s.inputs = append(s.inputs, &in)
 	return nil
 }
@@ -74,7 +84,8 @@ func (s *fakeStore) ActiveRun(_ context.Context, cid uuid.UUID) (*Run, error) {
 	for _, r := range s.runs {
 		if r.ConversationID == cid && (r.State == StateClassifying || r.State == StateQueued || r.State == StateRunning ||
 			r.State == StatePushing || r.State == StateWaitingForInput) {
-			return r, nil
+			cp := *r
+			return &cp, nil
 		}
 	}
 	return nil, nil
@@ -83,7 +94,8 @@ func (s *fakeStore) LastRun(_ context.Context, cid uuid.UUID) (*Run, error) {
 	var last *Run
 	for _, r := range s.runs {
 		if r.ConversationID == cid {
-			last = r
+			cp := *r
+			last = &cp
 		}
 	}
 	return last, nil
@@ -123,15 +135,27 @@ func (s *fakeStore) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ st
 	return nil
 }
 
-type fakeTracker struct{ labels []string }
+type fakeTracker struct {
+	labels []string
+	err    error
+}
 
 func (f *fakeTracker) GetTicket(_ context.Context, _, ref string) (*pluginv1.Ticket, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return &pluginv1.Ticket{TicketRef: ref, Title: "Titel", Description: "Beschreibung", Labels: f.labels}, nil
 }
 
-type fakeReporter struct{ milestones, notices []string }
+type fakeReporter struct {
+	milestones, notices []string
+	failMilestone       string
+}
 
 func (f *fakeReporter) Milestone(_ context.Context, _ Run, m, text string) error {
+	if m == f.failMilestone {
+		return errors.New("milestone boom")
+	}
 	f.milestones = append(f.milestones, m+": "+text)
 	return nil
 }
@@ -325,5 +349,82 @@ func TestStartFollowUpUsesOpenInputs(t *testing.T) {
 	}
 	if len(f.s.runs) != 2 {
 		t.Fatalf("no open inputs must not start a run, runs = %d", len(f.s.runs))
+	}
+}
+
+func TestHandleGetTicketErrorFailsRunAndLaterCommentStartsNewRun(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.tr.err = errors.New("tracker down")
+
+	err := f.r.Handle(context.Background(), "acme", assigned("e1", actor))
+
+	if err == nil || !errors.Is(err, f.tr.err) {
+		t.Fatalf("err = %v", err)
+	}
+	if f.s.runs[0].State != StateFailed || len(f.rep.milestones) != 0 {
+		t.Fatalf("state=%s milestones=%v", f.s.runs[0].State, f.rep.milestones)
+	}
+	f.tr.err = nil
+	handle(t, f, comment("e2", "nochmal", false))
+	if len(f.s.runs) != 2 || f.s.runs[1].State != StateQueued {
+		t.Fatalf("runs = %d", len(f.s.runs))
+	}
+}
+
+func TestHandleStartedMilestoneErrorFailsRun(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.rep.failMilestone = "started"
+	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
+		t.Fatal("expected error")
+	}
+	if f.s.runs[0].State != StateFailed {
+		t.Fatalf("state = %s", f.s.runs[0].State)
+	}
+}
+
+func TestHandleMarkInboundErrorDoesNothingElse(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.s.markErr = errors.New("db down")
+	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(f.s.convs)+len(f.s.inputs)+len(f.s.runs)+len(f.rep.notices)+len(f.rep.milestones) != 0 {
+		t.Fatal("no side effects expected")
+	}
+}
+
+func TestHandleAddInputErrorStartsNoRun(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.s.addErr = errors.New("db down")
+	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(f.s.runs) != 0 || len(f.rep.milestones) != 0 {
+		t.Fatal("no run expected")
+	}
+}
+
+func TestHandleRolelessFollowupIsSilentlyIgnored(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	f.s.runs[0].State = StateSucceeded
+	ev := comment("e2", "hi", false)
+	ev.Actor.Email = "stranger@example.com"
+
+	handle(t, f, ev)
+
+	if len(f.rep.notices) != 0 || len(f.s.inputs) != 1 || len(f.s.runs) != 1 {
+		t.Fatalf("notices=%d inputs=%d runs=%d", len(f.rep.notices), len(f.s.inputs), len(f.s.runs))
+	}
+}
+
+func TestHandleMentionWithoutConversationCreatesQueuedQuestion(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, comment("e1", "@orchivio was ist das?", true))
+	if len(f.s.convs) != 1 || len(f.s.runs) != 1 {
+		t.Fatalf("convs=%d runs=%d", len(f.s.convs), len(f.s.runs))
+	}
+	if r := f.s.runs[0]; r.State != StateQueued || r.Kind != classifier.KindQuestion || r.Branch != "" {
+		t.Fatalf("run = %+v", r)
 	}
 }

@@ -2,8 +2,11 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +28,8 @@ const (
 
 // Router routes tracker events to conversations and runs.
 type Router struct {
+	// ponytail: global lock, per-conversation lock or DB unique index if throughput matters
+	mu       sync.Mutex
 	cfg      *config.Sync
 	store    Store
 	tracker  Tracker
@@ -39,6 +44,8 @@ func New(cfg *config.Sync, s Store, t Tracker, r Reporter, now func() time.Time,
 
 // Handle applies one tracker event. Order of the steps is the specification.
 func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	cfg := r.cfg.Current()
 	tn, ok := cfg.Tenants[tenant]
 	if !ok {
@@ -65,6 +72,10 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 	}
 	email := ev.GetActor().GetEmail()
 	if !classifier.HasAnyRole(project, email) {
+		if trigger == classifier.TriggerFollowup {
+			slog.Debug("ignoring follow-up comment from actor without role", "ticket", ev.GetTicketRef())
+			return nil
+		}
 		return r.reporter.Notice(ctx, tenant, ev.GetTicketRef(), NoticeMissingRole)
 	}
 	if conv == nil {
@@ -97,6 +108,8 @@ func triggerFor(ev *pluginv1.TrackerEvent, hasConversation bool) (classifier.Tri
 
 // StartFollowUp starts a run for inputs that arrived while a run was active.
 func (r *Router) StartFollowUp(ctx context.Context, conversationID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	open, err := r.store.OpenInputs(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("open inputs %s: %w", conversationID, err)
@@ -105,8 +118,11 @@ func (r *Router) StartFollowUp(ctx context.Context, conversationID uuid.UUID) er
 		return nil
 	}
 	conv, err := r.store.GetConversation(ctx, conversationID)
-	if err != nil || conv == nil {
+	if err != nil {
 		return fmt.Errorf("get conversation %s: %w", conversationID, err)
+	}
+	if conv == nil {
+		return fmt.Errorf("get conversation %s: not found", conversationID)
 	}
 	tn, project, ok := r.cfg.Current().ProjectFor(conv.Tenant, conv.Project)
 	if !ok {
@@ -136,13 +152,26 @@ func (r *Router) start(ctx context.Context, tn config.Tenant, p config.Project, 
 		if err := r.store.CreateRun(ctx, *run); err != nil {
 			return fmt.Errorf("create run %s: %w", conv.TicketRef, err)
 		}
+		err = nil
+		err = r.store.AppendEvent(ctx, conv.Tenant, run.ID, eventRunState, map[string]string{"state": StateClassifying})
 	} else {
-		run.State = StateClassifying
+		err = r.setState(ctx, run, StateClassifying)
 	}
-	if err := r.store.AppendEvent(ctx, conv.Tenant, run.ID, eventRunState, map[string]string{"state": StateClassifying}); err != nil {
-		return fmt.Errorf("record state %s: %w", conv.TicketRef, err)
+	if err == nil {
+		err = r.classify(ctx, run, last, p, trigger, email)
 	}
-	return r.classify(ctx, run, last, p, trigger, email)
+	if err != nil {
+		return r.fail(ctx, run, err)
+	}
+	return nil
+}
+
+// fail parks a run in failed so a stuck classifying run cannot strand later inputs.
+func (r *Router) fail(ctx context.Context, run *Run, cause error) error {
+	if err := r.setState(ctx, run, StateFailed); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 
 func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project, trigger classifier.Trigger, email string) error {
