@@ -48,7 +48,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
 
 -- name: UpdateRun :execrows
 UPDATE runs SET state = $2, repos = $3, branch = $4, prompt = $5, result = $6, pr_urls = $7,
-                session_id = $8, lease_owner = $9, lease_until = $10, updated_at = $11
+                session_id = $8, lease_owner = $9, lease_until = $10, updated_at = $11, kind = $12
 WHERE id = $1;
 
 -- name: LeaseNext :one

@@ -305,3 +305,19 @@ func TestAppendEventUnmarshalablePayloadFailsWithoutRow(t *testing.T) {
 		t.Fatalf("events = %+v, %v; want none", evs, err)
 	}
 }
+
+func TestUpdateRunPersistsKind(t *testing.T) {
+	s := newStore(t)
+	r := newRun(t, s, newConversation(t, s), router.StateClassifying, base)
+	r.Kind = "question"
+	if err := s.UpdateRun(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(context.Background(), r.ID)
+	if err != nil || got == nil {
+		t.Fatalf("GetRun: %v, %v", got, err)
+	}
+	if got.Kind != "question" {
+		t.Fatalf("kind = %q, want question", got.Kind)
+	}
+}

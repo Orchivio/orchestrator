@@ -179,7 +179,7 @@ func (s *Store) UpdateRun(ctx context.Context, r router.Run) error {
 	}
 	n, err := s.q.UpdateRun(ctx, db.UpdateRunParams{
 		ID: r.ID, State: r.State, Repos: repos, Branch: r.Branch, Prompt: r.Prompt, Result: r.Result,
-		PrUrls: prURLs, SessionID: r.SessionID, LeaseOwner: r.LeaseOwner, LeaseUntil: r.LeaseUntil,
+		PrUrls: prURLs, Kind: r.Kind, SessionID: r.SessionID, LeaseOwner: r.LeaseOwner, LeaseUntil: r.LeaseUntil,
 		UpdatedAt: r.UpdatedAt})
 	if err == nil && n == 0 {
 		return fmt.Errorf("update run %s: not found", r.ID)

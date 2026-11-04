@@ -482,7 +482,7 @@ func (q *Queries) OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 
 const updateRun = `-- name: UpdateRun :execrows
 UPDATE runs SET state = $2, repos = $3, branch = $4, prompt = $5, result = $6, pr_urls = $7,
-                session_id = $8, lease_owner = $9, lease_until = $10, updated_at = $11
+                session_id = $8, lease_owner = $9, lease_until = $10, updated_at = $11, kind = $12
 WHERE id = $1
 `
 
@@ -498,6 +498,7 @@ type UpdateRunParams struct {
 	LeaseOwner string
 	LeaseUntil *time.Time
 	UpdatedAt  time.Time
+	Kind       string
 }
 
 func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, error) {
@@ -513,6 +514,7 @@ func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, er
 		arg.LeaseOwner,
 		arg.LeaseUntil,
 		arg.UpdatedAt,
+		arg.Kind,
 	)
 	if err != nil {
 		return 0, err

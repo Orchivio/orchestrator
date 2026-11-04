@@ -65,6 +65,14 @@ func NewRegistry(cfg *config.Sync, log *slog.Logger) *Registry {
 	}}
 }
 
+// SetDialer replaces how adapter addresses are dialed; for tests that talk
+// to in-memory adapters. Call before first use.
+func (r *Registry) SetDialer(d func(addr string) (*grpc.ClientConn, error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dialer = d
+}
+
 // Close closes all connections.
 func (r *Registry) Close() {
 	r.mu.Lock()
