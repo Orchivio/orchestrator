@@ -63,7 +63,7 @@ dev/run-all.sh   # Postgres, Proxy, Build, alle Prozesse im Hintergrund
 dev/stop-all.sh  # beendet die Prozesse und den Proxy-Container
 ```
 
-Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 5432, 7070, 7101, 7102, 7201 und 8088 müssen frei sein. Ein zweiter Start bricht ab, solange die Prozesse des ersten laufen; erst `dev/stop-all.sh`.
+Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 5432, 7070, 7101, 7102, 7201 und 8088 müssen frei sein. Ein zweiter Start bricht ab, solange Prozesse des ersten laufen; dann zuerst `dev/stop-all.sh` ausführen.
 
 `run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten) und wartet bis zu 30 Sekunden, bis der Server antwortet. Postgres bleibt nach dem Stoppen laufen (`podman compose -f dev/compose.yaml down` beendet es).
 

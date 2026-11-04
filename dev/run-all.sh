@@ -31,13 +31,11 @@ fi
 
 mkdir -p "$logs" "$bin"
 # Nicht doppelt starten: laufende Prozesse aus einem früheren Start würden sonst verwaist.
-if [[ -f "$logs/pids" ]]; then
-  while read -r pid name; do
-    if [[ -n "$pid" ]] && ps -p "$pid" -o command= 2>/dev/null | grep -qF "$bin/$name"; then
-      echo "Fehler: $name läuft noch (PID $pid). Bitte zuerst dev/stop-all.sh ausführen." >&2
-      exit 1
-    fi
-  done <"$logs/pids"
+# shellcheck disable=SC1091
+source "$here/pids.sh"
+if running="$(any_running "$logs/pids")"; then
+  echo "Fehler: ${running% *} läuft noch (PID ${running#* }). Bitte zuerst dev/stop-all.sh ausführen." >&2
+  exit 1
 fi
 : >"$logs/pids"
 
@@ -55,10 +53,11 @@ echo "Baue Binaries ..."
 
 # start <name> <env-Zuweisungen...> -- <befehl...>: Prozess im Hintergrund, Log und PID merken.
 start() {
-  local name="$1"
+  local name="$1" binary="" arg
   shift
+  for arg in "$@"; do [[ "$arg" == "$bin/"* ]] && { binary="${arg#"$bin"/}"; break; }; done
   nohup env "$@" >>"$logs/$name.log" 2>&1 &
-  echo "$! $name" >>"$logs/pids"
+  echo "$! $binary" >>"$logs/pids"
   echo "  $name (PID $!)"
 }
 
