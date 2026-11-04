@@ -17,6 +17,10 @@ go test -tags e2e ./internal/e2e/
 - `gh` (GitHub CLI) optional, nützlich zum Prüfen der Pull Requests
 - Ein Test-Repo, z. B. `soemii/orchivio-playground`, mit mindestens einem Commit auf `main`
 
+## Vorbereitung
+
+`dev/env.example` nach `dev/.env` kopieren (`cp dev/env.example dev/.env`). Die folgenden Abschnitte tragen ihre Werte dort ein. `dev/.env` ist gitignored; Secrets nie committen.
+
 ## GitHub-App einrichten
 
 1. GitHub, Settings, Developer settings, GitHub Apps, **New GitHub App**.
@@ -52,14 +56,14 @@ go test -tags e2e ./internal/e2e/
 - `projects[].trackerKey`: dein Team-Key.
 - `repos[].slug`, `classifier.defaultRepo`, `classifier.repoLabels`: dein Test-Repo (`owner/name`).
 
-Dann `dev/env.example` nach `dev/.env` kopieren und alle Werte eintragen. `dev/.env` ist gitignored; Secrets nie committen.
-
 ## Starten und Stoppen
 
 ```sh
 dev/run-all.sh   # Postgres, Proxy, Build, alle Prozesse im Hintergrund
 dev/stop-all.sh  # beendet die Prozesse und den Proxy-Container
 ```
+
+Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 5432, 7070, 7101, 7102, 7201 und 8088 müssen frei sein. Ein zweiter Start bricht ab, solange die Prozesse des ersten laufen; erst `dev/stop-all.sh`.
 
 `run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten) und wartet bis zu 30 Sekunden, bis der Server antwortet. Postgres bleibt nach dem Stoppen laufen (`podman compose -f dev/compose.yaml down` beendet es).
 

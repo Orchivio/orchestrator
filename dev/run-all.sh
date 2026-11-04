@@ -30,6 +30,15 @@ if ((${#missing[@]} > 0)); then
 fi
 
 mkdir -p "$logs" "$bin"
+# Nicht doppelt starten: laufende Prozesse aus einem früheren Start würden sonst verwaist.
+if [[ -f "$logs/pids" ]]; then
+  while read -r pid name; do
+    if [[ -n "$pid" ]] && ps -p "$pid" -o command= 2>/dev/null | grep -qF "$bin/$name"; then
+      echo "Fehler: $name läuft noch (PID $pid). Bitte zuerst dev/stop-all.sh ausführen." >&2
+      exit 1
+    fi
+  done <"$logs/pids"
+fi
 : >"$logs/pids"
 
 echo "Starte Postgres ..."
@@ -48,8 +57,8 @@ echo "Baue Binaries ..."
 start() {
   local name="$1"
   shift
-  env "$@" >>"$logs/$name.log" 2>&1 &
-  echo "$!" >>"$logs/pids"
+  nohup env "$@" >>"$logs/$name.log" 2>&1 &
+  echo "$! $name" >>"$logs/pids"
   echo "  $name (PID $!)"
 }
 
@@ -73,5 +82,6 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
-echo "Fehler: Server antwortet nach 30 s nicht. Siehe $logs/server.log" >&2
+echo "Fehler: Server antwortet nach 30 s nicht. Siehe $logs/server.log (und die anderen Logs in $logs). Stoppe alles ..." >&2
+"$here/stop-all.sh" >&2 || true
 exit 1
