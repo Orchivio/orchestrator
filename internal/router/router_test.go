@@ -207,6 +207,7 @@ projects:
 		var id uuid.UUID
 		binary.BigEndian.PutUint64(id[8:], n)
 		id[0] = 0xab
+		id[3] = byte(n) // distinct 8-char prefix per id, so branch names differ per run
 		return id
 	}
 	clock := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
@@ -426,5 +427,23 @@ func TestHandleMentionWithoutConversationCreatesQueuedQuestion(t *testing.T) {
 	}
 	if r := f.s.runs[0]; r.State != StateQueued || r.Kind != classifier.KindQuestion || r.Branch != "" {
 		t.Fatalf("run = %+v", r)
+	}
+}
+
+func TestHandleResumeKeepsBranchOfWaitingRun(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	first := f.s.runs[0]
+	f.s.runs[0].State = StateSucceeded
+	handle(t, f, comment("e2", "bitte noch X", false))
+	if f.s.runs[1].Branch != first.Branch {
+		t.Fatalf("follow-up branch = %q, want %q", f.s.runs[1].Branch, first.Branch)
+	}
+	f.s.runs[1].State = StateWaitingForInput // agent asked a question
+
+	handle(t, f, comment("e3", "Antwort", false))
+
+	if len(f.s.runs) != 2 || f.s.runs[1].State != StateQueued || f.s.runs[1].Branch != first.Branch {
+		t.Fatalf("runs=%d resumed=%+v, want branch %q", len(f.s.runs), f.s.runs[1], first.Branch)
 	}
 }

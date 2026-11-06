@@ -214,9 +214,10 @@ func (r *Router) queue(ctx context.Context, run *Run, ticket *pluginv1.Ticket, l
 		return fmt.Errorf("history %s: %w", ref, err)
 	}
 	run.Prompt = BuildPrompt(ticket, history, run.Kind)
-	run.Branch = ""
 	if run.Kind == classifier.KindTask {
 		run.Branch = r.branchFor(run, last)
+	} else {
+		run.Branch = ""
 	}
 	if err := r.setState(ctx, run, StateQueued); err != nil {
 		return err
@@ -228,7 +229,12 @@ func (r *Router) queue(ctx context.Context, run *Run, ticket *pluginv1.Ticket, l
 	return r.milestone(ctx, run, config.MilestoneStarted, text)
 }
 
+// branchFor keeps the branch of a resumed run, reuses the previous task's branch,
+// or derives a fresh one.
 func (r *Router) branchFor(run, last *Run) string {
+	if run.Branch != "" {
+		return run.Branch
+	}
 	if last != nil && last.ID != run.ID && last.Kind == classifier.KindTask && last.Branch != "" {
 		return last.Branch
 	}
