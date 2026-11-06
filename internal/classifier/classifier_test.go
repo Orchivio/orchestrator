@@ -45,6 +45,8 @@ func TestClassify(t *testing.T) {
 		{"question label on assign", fixture(), Input{Trigger: "assigned", Labels: []string{"orchivio:frage"}, ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
 		{"both labels question", fixture(), Input{Trigger: "assigned", Labels: []string{"orchivio:aufgabe", "orchivio:frage"}, ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
 		{"followup keeps task", fixture(), Input{Trigger: "followup", PreviousKind: "task", ActorEmail: "dev@x"}, "task", []string{"A"}, "", false},
+		{"followup other actor lacks tasks role", fixture(), Input{Trigger: "followup", PreviousKind: "task", ActorEmail: "dev@x", OtherActors: []string{"q@x"}}, "question", []string{"A"}, "herabgestuft", false},
+		{"followup other actors with tasks role", fixture(), Input{Trigger: "followup", PreviousKind: "task", ActorEmail: "dev@x", OtherActors: []string{"pm@x"}}, "task", []string{"A"}, "", false},
 		{"followup empty previous", fixture(), Input{Trigger: "followup", ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
 		{"repo dropped no default", fixture(), Input{Trigger: "mentioned", Labels: []string{"repo:b"}, ActorEmail: "pm@x"}, "question", nil, "Berechtigung fehlt für mindestens ein Repo.", true},
 		{"no label no default", noDefault, Input{Trigger: "mentioned", ActorEmail: "dev@x"}, "question", nil, "", true},

@@ -19,7 +19,10 @@ import (
 	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
 )
 
-const actor = "you@example.com"
+const (
+	actor = "you@example.com"
+	asker = "asker@example.com" // questions role only
+)
 
 type fakeStore struct {
 	seen   map[string]bool
@@ -190,9 +193,9 @@ projects:
       questionLabels: ["orchivio:frage"]
       repoLabels: { "repo:playground": soemii/playground }
       defaultRepo: %q
-    roles: { questions: ["%s"], tasks: ["%s"] }
+    roles: { questions: ["%s", "%s"], tasks: ["%s"] }
     maxDiffLines: 500
-`, defaultRepo, actor, actor)
+`, defaultRepo, actor, asker, actor)
 	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -472,5 +475,28 @@ func TestHandleMentionInTaskConversationQuestionLabelWins(t *testing.T) {
 
 	if k := f.s.runs[1].Kind; k != classifier.KindQuestion {
 		t.Fatalf("kind = %s", k)
+	}
+}
+
+func TestStartFollowUpDowngradesWhenAnyOpenInputActorLacksTasksRole(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	f.s.runs[0].State = StateRunning
+	ev := comment("e2", "lösch alles", false)
+	ev.Actor.Email = asker
+	handle(t, f, ev)
+	handle(t, f, comment("e3", "danke", false))
+	f.s.runs[0].State = StateSucceeded
+
+	if err := f.r.StartFollowUp(context.Background(), f.s.convs[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	second := f.s.runs[1]
+	if second.Kind != classifier.KindQuestion || second.Branch != "" {
+		t.Fatalf("second = %+v", second)
+	}
+	if !strings.Contains(strings.Join(f.rep.milestones, "|"), classifier.NoteDowngraded) {
+		t.Fatalf("milestones = %v", f.rep.milestones)
 	}
 }

@@ -180,6 +180,14 @@ func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project,
 	if err != nil {
 		return fmt.Errorf("get ticket %s: %w", ref, err)
 	}
+	open, err := r.store.OpenInputs(ctx, run.ConversationID)
+	if err != nil {
+		return fmt.Errorf("open inputs %s: %w", ref, err)
+	}
+	others := make([]string, 0, len(open))
+	for _, in := range open {
+		others = append(others, in.ActorEmail)
+	}
 	previousKind := ""
 	if last != nil {
 		previousKind = last.Kind
@@ -187,7 +195,8 @@ func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project,
 			trigger = classifier.TriggerFollowup // a mention continues the conversation's kind; labels still win
 		}
 	}
-	d := classifier.Classify(p, classifier.Input{Trigger: trigger, PreviousKind: previousKind, Labels: ticket.GetLabels(), ActorEmail: email})
+	d := classifier.Classify(p, classifier.Input{Trigger: trigger, PreviousKind: previousKind, Labels: ticket.GetLabels(),
+		ActorEmail: email, OtherActors: others})
 	run.Kind, run.Repos = d.Kind, d.Repos
 	payload := map[string]any{"kind": d.Kind, "repos": d.Repos, "reason": d.Reason, "notes": d.Notes}
 	if err := r.store.AppendEvent(ctx, run.Tenant, run.ID, eventRunClassified, payload); err != nil {

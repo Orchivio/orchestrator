@@ -30,6 +30,9 @@ type Input struct {
 	PreviousKind string
 	Labels       []string
 	ActorEmail   string
+	// OtherActors wrote further inputs feeding this run; a task needs the tasks role
+	// of every one of them (fail closed), repos stay decided by ActorEmail.
+	OtherActors []string
 }
 
 type Decision struct {
@@ -44,7 +47,7 @@ type Decision struct {
 func Classify(p config.Project, in Input) Decision {
 	d := Decision{}
 	d.Kind = classifyKind(p, in, &d)
-	if d.Kind == KindTask && !contains(p.Roles.Tasks, in.ActorEmail) {
+	if d.Kind == KindTask && !allContain(p.Roles.Tasks, append([]string{in.ActorEmail}, in.OtherActors...)) {
 		d.Kind = KindQuestion
 		d.Notes = append(d.Notes, NoteDowngraded)
 		d.Reason = append(d.Reason, "downgraded to question: actor lacks tasks role")
@@ -135,6 +138,10 @@ func HasAnyRole(p config.Project, email string) bool {
 
 func contains(list []string, s string) bool {
 	return slices.ContainsFunc(list, func(x string) bool { return strings.EqualFold(x, s) })
+}
+
+func allContain(list, emails []string) bool {
+	return !slices.ContainsFunc(emails, func(e string) bool { return !contains(list, e) })
 }
 
 func hasAny(labels, wanted []string) bool {
