@@ -347,4 +347,58 @@ func TestEndToEndWithFakes(t *testing.T) {
 			t.Fatalf("follow-up run %s prompt lacks second comment", second.GetRunId())
 		}
 	})
+	t.Run("follow-up task pushes to the same branch and reuses the open pull request", func(t *testing.T) {
+		e.send(pluginv1.TrackerEvent_ASSIGNED, "ORC-4", "", false)
+		first := e.lease(t)
+		e.reportAndComplete(t, first, &workerv1.CompleteRunRequest{
+			Outcome: workerv1.CompleteRunRequest_PUSHED, Text: "Teil eins.",
+			PushedBranches: map[string]string{repoSlug: first.GetBranch()},
+		})
+		eventually(t, "first run succeeded", runState(e, first, router.StateSucceeded))
+
+		e.send(pluginv1.TrackerEvent_COMMENTED, "ORC-4", "Bitte noch Teil zwei", false)
+		second := e.lease(t)
+		if second.GetRunId() == first.GetRunId() || second.GetKind() != "task" || second.GetBranch() != first.GetBranch() {
+			t.Fatalf("follow-up run %s kind=%q branch=%q, want task on %q", second.GetRunId(), second.GetKind(), second.GetBranch(), first.GetBranch())
+		}
+		e.reportAndComplete(t, second, &workerv1.CompleteRunRequest{
+			Outcome: workerv1.CompleteRunRequest_PUSHED, Text: "Teil zwei.",
+			PushedBranches: map[string]string{repoSlug: second.GetBranch()},
+		})
+		eventually(t, "follow-up run succeeded", runState(e, second, router.StateSucceeded))
+		var heads []string
+		for _, pr := range e.codeHost.opened() {
+			if pr.GetHead() == first.GetBranch() {
+				heads = append(heads, pr.GetHead())
+			}
+		}
+		if len(heads) != 2 {
+			t.Fatalf("OpenPullRequest on %s called %d times, want 2", first.GetBranch(), len(heads))
+		}
+	})
+
+	t.Run("ask_human question precedes the answer in the resumed prompt", func(t *testing.T) {
+		e.send(pluginv1.TrackerEvent_ASSIGNED, "ORC-5", "", false)
+		a := e.lease(t)
+		e.reportAndComplete(t, a, &workerv1.CompleteRunRequest{Outcome: workerv1.CompleteRunRequest_WAITING, Text: "Welche Farbe?"})
+		eventually(t, "question comment", hasComment(e, "ORC-5", "Welche Farbe?"))
+
+		e.send(pluginv1.TrackerEvent_COMMENTED, "ORC-5", "Blau, bitte.", false)
+		resumed := e.lease(t)
+		prompt := resumed.GetSpec().GetPrompt()
+		q, ans := strings.Index(prompt, "Welche Farbe?"), strings.Index(prompt, "Blau, bitte.")
+		if resumed.GetRunId() != a.GetRunId() || resumed.GetBranch() != a.GetBranch() || q < 0 || ans < 0 || q > ans {
+			t.Fatalf("resumed run %s branch %q (want %s %q), prompt:\n%s", resumed.GetRunId(), resumed.GetBranch(), a.GetRunId(), a.GetBranch(), prompt)
+		}
+		if strings.Count(prompt, "Welche Farbe?") != 1 || !strings.Contains(prompt, "**Orchivio**") {
+			t.Fatalf("question must appear once, authored by Orchivio:\n%s", prompt)
+		}
+	})
+}
+
+func runState(e *env, a *workerv1.RunAssignment, want string) func() bool {
+	return func() bool {
+		r, err := e.db.GetRun(context.Background(), uuid.MustParse(a.GetRunId()))
+		return err == nil && r != nil && r.State == want
+	}
 }
