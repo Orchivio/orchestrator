@@ -271,7 +271,6 @@ type RunAssignment struct {
 	Branch        string                 `protobuf:"bytes,4,opt,name=branch,proto3" json:"branch,omitempty"`
 	Repos         []*Repo                `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`
 	Spec          *v1.RunSpec            `protobuf:"bytes,6,opt,name=spec,proto3" json:"spec,omitempty"`
-	AllowedPaths  []string               `protobuf:"bytes,7,rep,name=allowed_paths,json=allowedPaths,proto3" json:"allowed_paths,omitempty"`
 	MaxDiffLines  int32                  `protobuf:"varint,8,opt,name=max_diff_lines,json=maxDiffLines,proto3" json:"max_diff_lines,omitempty"`
 	MaxDuration   *durationpb.Duration   `protobuf:"bytes,9,opt,name=max_duration,json=maxDuration,proto3" json:"max_duration,omitempty"`
 	LeaseUntil    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=lease_until,json=leaseUntil,proto3" json:"lease_until,omitempty"`
@@ -353,13 +352,6 @@ func (x *RunAssignment) GetSpec() *v1.RunSpec {
 	return nil
 }
 
-func (x *RunAssignment) GetAllowedPaths() []string {
-	if x != nil {
-		return x.AllowedPaths
-	}
-	return nil
-}
-
 func (x *RunAssignment) GetMaxDiffLines() int32 {
 	if x != nil {
 		return x.MaxDiffLines
@@ -399,6 +391,7 @@ type Repo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
 	BaseBranch    string                 `protobuf:"bytes,2,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	AllowedPaths  []string               `protobuf:"bytes,3,rep,name=allowed_paths,json=allowedPaths,proto3" json:"allowed_paths,omitempty"` // path prefixes, "" = everything, empty = nothing
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -445,6 +438,13 @@ func (x *Repo) GetBaseBranch() string {
 		return x.BaseBranch
 	}
 	return ""
+}
+
+func (x *Repo) GetAllowedPaths() []string {
+	if x != nil {
+		return x.AllowedPaths
+	}
+	return nil
 }
 
 type ReportEventsRequest struct {
@@ -736,15 +736,14 @@ const file_orchivio_worker_v1_worker_proto_rawDesc = "" +
 	"\x0fLeaseRunRequest\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\"G\n" +
 	"\x10LeaseRunResponse\x123\n" +
-	"\x03run\x18\x01 \x01(\v2!.orchivio.worker.v1.RunAssignmentR\x03run\"\xd3\x03\n" +
+	"\x03run\x18\x01 \x01(\v2!.orchivio.worker.v1.RunAssignmentR\x03run\"\xc3\x03\n" +
 	"\rRunAssignment\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x16\n" +
 	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06branch\x18\x04 \x01(\tR\x06branch\x12.\n" +
 	"\x05repos\x18\x05 \x03(\v2\x18.orchivio.worker.v1.RepoR\x05repos\x12/\n" +
-	"\x04spec\x18\x06 \x01(\v2\x1b.orchivio.plugin.v1.RunSpecR\x04spec\x12#\n" +
-	"\rallowed_paths\x18\a \x03(\tR\fallowedPaths\x12$\n" +
+	"\x04spec\x18\x06 \x01(\v2\x1b.orchivio.plugin.v1.RunSpecR\x04spec\x12$\n" +
 	"\x0emax_diff_lines\x18\b \x01(\x05R\fmaxDiffLines\x12<\n" +
 	"\fmax_duration\x18\t \x01(\v2\x19.google.protobuf.DurationR\vmaxDuration\x12;\n" +
 	"\vlease_until\x18\n" +
@@ -752,11 +751,12 @@ const file_orchivio_worker_v1_worker_proto_rawDesc = "" +
 	"leaseUntil\x12\x1d\n" +
 	"\n" +
 	"ticket_ref\x18\v \x01(\tR\tticketRef\x12!\n" +
-	"\fticket_title\x18\f \x01(\tR\vticketTitle\";\n" +
+	"\fticket_title\x18\f \x01(\tR\vticketTitleJ\x04\b\a\x10\bR\rallowed_paths\"`\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x1f\n" +
 	"\vbase_branch\x18\x02 \x01(\tR\n" +
-	"baseBranch\"\x7f\n" +
+	"baseBranch\x12#\n" +
+	"\rallowed_paths\x18\x03 \x03(\tR\fallowedPaths\"\x7f\n" +
 	"\x13ReportEventsRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x124\n" +

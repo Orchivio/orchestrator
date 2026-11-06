@@ -182,8 +182,11 @@ func TestLeaseBuildsAssignment(t *testing.T) {
 	if len(a.Repos) != 2 || a.Repos[1].BaseBranch != "develop" {
 		t.Errorf("repos = %v", a.Repos)
 	}
-	if got := strings.Join(a.AllowedPaths, ","); got != "src/,docs/" {
-		t.Errorf("allowed paths = %s", got)
+	if got := strings.Join(a.Repos[0].AllowedPaths, ","); got != "src/,docs/" {
+		t.Errorf("allowed paths of soemii/a = %s", got)
+	}
+	if got := strings.Join(a.Repos[1].AllowedPaths, ","); got != "src/" { // no union: docs/ is not allowed in soemii/b
+		t.Errorf("allowed paths of soemii/b = %s", got)
 	}
 	want := f.now.Add(25 * time.Minute)
 	if !a.LeaseUntil.AsTime().Equal(want) || !f.s.runs[f.run.ID].LeaseUntil.Equal(want) {

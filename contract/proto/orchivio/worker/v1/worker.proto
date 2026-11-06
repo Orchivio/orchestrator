@@ -34,13 +34,14 @@ message LeaseRunResponse {
 }
 
 message RunAssignment {
+  reserved 7; // was allowed_paths (union across repos), now per Repo
+  reserved "allowed_paths";
   string run_id = 1;
   string tenant = 2;
   string kind = 3;
   string branch = 4;
   repeated Repo repos = 5;
   orchivio.plugin.v1.RunSpec spec = 6;
-  repeated string allowed_paths = 7;
   int32 max_diff_lines = 8;
   google.protobuf.Duration max_duration = 9;
   google.protobuf.Timestamp lease_until = 10;
@@ -51,6 +52,7 @@ message RunAssignment {
 message Repo {
   string slug = 1;
   string base_branch = 2;
+  repeated string allowed_paths = 3; // path prefixes, "" = everything, empty = nothing
 }
 
 message ReportEventsRequest {

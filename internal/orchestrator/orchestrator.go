@@ -108,24 +108,19 @@ func (o *Orchestrator) Lease(ctx context.Context, workerID string) (*workerv1.Ru
 	}
 	if found {
 		a.MaxDiffLines = int32(project.MaxDiffLines)
-		a.Repos, a.AllowedPaths = assignmentRepos(run, project)
+		a.Repos = assignmentRepos(run, project)
 	}
 	return a, nil
 }
 
-func assignmentRepos(run *router.Run, project config.Project) ([]*workerv1.Repo, []string) {
-	var repos []*workerv1.Repo
-	var paths []string
+// assignmentRepos carries each repo's own allowed paths; an unknown slug gets none (nothing pushable).
+func assignmentRepos(run *router.Run, project config.Project) []*workerv1.Repo {
+	repos := make([]*workerv1.Repo, 0, len(run.Repos))
 	for _, slug := range run.Repos {
 		repo, _ := findRepo(project, slug)
-		repos = append(repos, &workerv1.Repo{Slug: slug, BaseBranch: repo.BaseBranch})
-		for _, p := range repo.AllowedPaths {
-			if !slices.Contains(paths, p) {
-				paths = append(paths, p)
-			}
-		}
+		repos = append(repos, &workerv1.Repo{Slug: slug, BaseBranch: repo.BaseBranch, AllowedPaths: repo.AllowedPaths})
 	}
-	return repos, paths
+	return repos
 }
 
 func findRepo(project config.Project, slug string) (config.Repo, bool) {
