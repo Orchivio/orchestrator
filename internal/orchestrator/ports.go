@@ -18,6 +18,7 @@ type Store interface {
 	GetRun(ctx context.Context, id uuid.UUID) (*router.Run, error) // nil, nil if unknown
 	UpdateRun(ctx context.Context, r router.Run) error
 	AppendEvent(ctx context.Context, tenant string, runID uuid.UUID, typ string, payload any) error
+	AddInput(ctx context.Context, in router.Input) error // agent questions (FromAgent) for the history
 }
 
 // CodeHost is the tenant's code host adapter.

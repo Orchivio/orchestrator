@@ -42,7 +42,13 @@ type fakeStore struct {
 	runs       map[uuid.UUID]*router.Run
 	queue      []uuid.UUID
 	events     []event
+	inputs     []router.Input
 	failUpdate bool
+}
+
+func (f *fakeStore) AddInput(_ context.Context, in router.Input) error {
+	f.inputs = append(f.inputs, in)
+	return nil
 }
 
 type event struct {
@@ -516,5 +522,31 @@ func TestCompleteAnsweredEmptyTextPostsFallback(t *testing.T) {
 	}
 	if f.state() != router.StateSucceeded || len(f.rep.milestones) != 1 || f.rep.milestones[0] != "result: "+textNoAnswer {
 		t.Errorf("state=%s milestones=%v", f.state(), f.rep.milestones)
+	}
+}
+
+func TestCompleteWaitingStoresRedactedQuestionAsAgentInput(t *testing.T) {
+	f := newFixture(t, "task")
+	f.lease(t)
+	_, text := tokenText()
+	if err := f.complete("w1", workerv1.CompleteRunRequest_WAITING, text, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.s.inputs) != 1 {
+		t.Fatalf("inputs = %+v", f.s.inputs)
+	}
+	in := f.s.inputs[0]
+	if !in.FromAgent || in.ActorEmail != "" || in.Body != "see ****" || in.RunID == nil || *in.RunID != f.run.ID ||
+		in.ConversationID != f.run.ConversationID || in.Tenant != "acme" || !in.CreatedAt.Equal(f.now) || in.ID == uuid.Nil {
+		t.Errorf("input = %+v", in)
+	}
+}
+
+func TestCompleteAnsweredStoresNoAgentInput(t *testing.T) {
+	f := newFixture(t, "question")
+	f.lease(t)
+	_ = f.complete("w1", workerv1.CompleteRunRequest_ANSWERED, "42", nil)
+	if len(f.s.inputs) != 0 {
+		t.Errorf("inputs = %+v", f.s.inputs)
 	}
 }

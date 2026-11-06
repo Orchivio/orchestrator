@@ -231,7 +231,9 @@ func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRe
 			err = o.completePushed(ctx, run, req.GetPushedBranches(), text)
 		}
 	case workerv1.CompleteRunRequest_WAITING:
-		err = o.finish(ctx, run, router.StateWaitingForInput, text, milestoneQuestion, text)
+		if err = o.addQuestion(ctx, run, text); err == nil {
+			err = o.finish(ctx, run, router.StateWaitingForInput, text, milestoneQuestion, text)
+		}
 	case workerv1.CompleteRunRequest_FAILED:
 		err = o.finish(ctx, run, router.StateFailed, text, milestoneResult, abortedPrefix+text)
 	default:
@@ -244,6 +246,18 @@ func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRe
 		if err := o.followUp(ctx, run.ConversationID); err != nil {
 			slog.Error("follow-up after run failed", "run", run.ID, "error", err)
 		}
+	}
+	return nil
+}
+
+// addQuestion keeps the agent's question as a history row of its own, so the
+// resumed run sees it before the human answer.
+func (o *Orchestrator) addQuestion(ctx context.Context, run *router.Run, text string) error {
+	runID := run.ID
+	in := router.Input{ID: uuid.New(), Tenant: run.Tenant, ConversationID: run.ConversationID, Body: text,
+		RunID: &runID, CreatedAt: o.now(), FromAgent: true}
+	if err := o.store.AddInput(ctx, in); err != nil {
+		return fmt.Errorf("store question of run %s: %w", run.ID, err)
 	}
 	return nil
 }

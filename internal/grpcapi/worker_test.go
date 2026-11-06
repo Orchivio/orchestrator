@@ -62,6 +62,7 @@ func (s *store) GetRun(_ context.Context, id uuid.UUID) (*router.Run, error) {
 	return nil, nil
 }
 func (s *store) UpdateRun(_ context.Context, r router.Run) error { s.runs[r.ID] = &r; return nil }
+func (s *store) AddInput(context.Context, router.Input) error    { return nil }
 func (s *store) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ string, _ any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
