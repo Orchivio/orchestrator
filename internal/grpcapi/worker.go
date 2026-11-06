@@ -65,7 +65,13 @@ func (w *Worker) ReportEvents(stream workerv1.WorkerService_ReportEventsServer) 
 		if err != nil {
 			return status.Errorf(codes.InvalidArgument, "run id: %v", err)
 		}
-		if err := w.orch.RecordEvent(stream.Context(), req.GetWorkerId(), runID, req.GetEvent()); err != nil {
+		err = w.orch.RecordEvent(stream.Context(), req.GetWorkerId(), runID, req.GetEvent())
+		if errors.Is(err, orchestrator.ErrInvalidEvent) {
+			// one bad event must not drop the rest of the run's timeline
+			slog.Warn("skipping invalid event", "worker", req.GetWorkerId(), "run", runID, "error", err)
+			continue
+		}
+		if err != nil {
 			return toStatus(err)
 		}
 	}

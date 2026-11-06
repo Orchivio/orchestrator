@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,7 +37,12 @@ projects:
     repos: [ { slug: a/b, baseBranch: main, allowedPaths: ["src/"] } ]
 `
 
-type store struct{ runs map[uuid.UUID]*router.Run }
+type store struct {
+	runs map[uuid.UUID]*router.Run
+
+	mu     sync.Mutex
+	events []string
+}
 
 func (s *store) LeaseNext(_ context.Context, w string, until time.Time) (*router.Run, error) {
 	for _, r := range s.runs {
@@ -54,8 +61,13 @@ func (s *store) GetRun(_ context.Context, id uuid.UUID) (*router.Run, error) {
 	}
 	return nil, nil
 }
-func (s *store) UpdateRun(_ context.Context, r router.Run) error                   { s.runs[r.ID] = &r; return nil }
-func (s *store) AppendEvent(context.Context, string, uuid.UUID, string, any) error { return nil }
+func (s *store) UpdateRun(_ context.Context, r router.Run) error { s.runs[r.ID] = &r; return nil }
+func (s *store) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ string, _ any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, typ)
+	return nil
+}
 
 type host struct{}
 
@@ -78,6 +90,12 @@ func (reporter) Milestone(context.Context, router.Run, string, string) error { r
 func (reporter) Notice(context.Context, string, string, string) error        { return nil }
 
 func setup(t *testing.T) (workerv1.WorkerServiceClient, uuid.UUID) {
+	t.Helper()
+	c, id, _ := setupWithStore(t)
+	return c, id
+}
+
+func setupWithStore(t *testing.T) (workerv1.WorkerServiceClient, uuid.UUID, *store) {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(cfgYAML), 0o600); err != nil {
@@ -103,7 +121,7 @@ func setup(t *testing.T) (workerv1.WorkerServiceClient, uuid.UUID) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return workerv1.NewWorkerServiceClient(conn), run.ID
+	return workerv1.NewWorkerServiceClient(conn), run.ID, st
 }
 
 func TestLeaseRunRoundTrip(t *testing.T) {
@@ -196,13 +214,19 @@ func TestEmptyWorkerIDInvalidArgument(t *testing.T) {
 	}
 }
 
-func TestBadEventTypeInvalidArgument(t *testing.T) {
-	c, id := setup(t)
+func TestBadEventTypeSkippedStreamContinues(t *testing.T) {
+	c, id, testStore := setupWithStore(t)
 	ctx := context.Background()
 	_, _ = c.LeaseRun(ctx, &workerv1.LeaseRunRequest{WorkerId: "w1"})
 	stream, _ := c.ReportEvents(ctx)
 	_ = stream.Send(&workerv1.ReportEventsRequest{RunId: id.String(), WorkerId: "w1", Event: &pluginv1.AgentEvent{Type: "evil"}})
-	if _, err := stream.CloseAndRecv(); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("bad event: %v", err)
+	_ = stream.Send(&workerv1.ReportEventsRequest{RunId: id.String(), WorkerId: "w1", Event: &pluginv1.AgentEvent{Type: "message", Text: "hi"}})
+	if _, err := stream.CloseAndRecv(); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	testStore.mu.Lock()
+	defer testStore.mu.Unlock()
+	if strings.Join(testStore.events, ",") != "run.state,message" { // lease state, then only the valid event
+		t.Fatalf("events = %v", testStore.events)
 	}
 }
