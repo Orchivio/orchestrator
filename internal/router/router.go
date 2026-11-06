@@ -19,6 +19,7 @@ import (
 const (
 	NoticeMissingRole = "Dafür fehlt dir die Rolle in Orchivio. Bitte wende dich an die Verantwortlichen des Projekts."
 	TextWhichRepo     = "Welches Repo ist gemeint? Setze bitte ein passendes Label und antworte hier."
+	TextInternalError = "Abgebrochen: interner Fehler. Details in der Timeline."
 
 	eventRunState      = "run.state"
 	eventRunClassified = "run.classified"
@@ -166,10 +167,15 @@ func (r *Router) start(ctx context.Context, tn config.Tenant, p config.Project, 
 	return nil
 }
 
-// fail parks a run in failed so a stuck classifying run cannot strand later inputs.
+// fail parks a run in failed so a stuck classifying run cannot strand later inputs,
+// and tells the ticket best-effort; a reporter error is logged, never added to cause.
 func (r *Router) fail(ctx context.Context, run *Run, cause error) error {
-	if err := r.setState(ctx, run, StateFailed); err != nil {
-		return errors.Join(cause, err)
+	stateErr := r.setState(ctx, run, StateFailed)
+	if err := r.reporter.Milestone(ctx, *run, config.MilestoneResult, TextInternalError); err != nil {
+		slog.Warn("result milestone of failed run not posted", "ticket", run.TicketRef, "run", run.ID, "err", err)
+	}
+	if stateErr != nil {
+		return errors.Join(cause, stateErr)
 	}
 	return cause
 }

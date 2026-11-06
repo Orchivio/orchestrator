@@ -365,7 +365,7 @@ func TestHandleGetTicketErrorFailsRunAndLaterCommentStartsNewRun(t *testing.T) {
 	if err == nil || !errors.Is(err, f.tr.err) {
 		t.Fatalf("err = %v", err)
 	}
-	if f.s.runs[0].State != StateFailed || len(f.rep.milestones) != 0 {
+	if f.s.runs[0].State != StateFailed || len(f.rep.milestones) != 1 || f.rep.milestones[0] != "result: "+TextInternalError {
 		t.Fatalf("state=%s milestones=%v", f.s.runs[0].State, f.rep.milestones)
 	}
 	f.tr.err = nil
@@ -384,52 +384,23 @@ func TestHandleStartedMilestoneErrorFailsRun(t *testing.T) {
 	if f.s.runs[0].State != StateFailed {
 		t.Fatalf("state = %s", f.s.runs[0].State)
 	}
-}
-
-func TestHandleMarkInboundErrorDoesNothingElse(t *testing.T) {
-	f := newFixture(t, "soemii/playground")
-	f.s.markErr = errors.New("db down")
-	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
-		t.Fatal("expected error")
-	}
-	if len(f.s.convs)+len(f.s.inputs)+len(f.s.runs)+len(f.rep.notices)+len(f.rep.milestones) != 0 {
-		t.Fatal("no side effects expected")
+	if len(f.rep.milestones) != 1 || f.rep.milestones[0] != "result: "+TextInternalError {
+		t.Fatalf("milestones = %v", f.rep.milestones)
 	}
 }
 
-func TestHandleAddInputErrorStartsNoRun(t *testing.T) {
+func TestHandleFailReturnsCauseWhenResultMilestoneFails(t *testing.T) {
 	f := newFixture(t, "soemii/playground")
-	f.s.addErr = errors.New("db down")
-	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
-		t.Fatal("expected error")
-	}
-	if len(f.s.runs) != 0 || len(f.rep.milestones) != 0 {
-		t.Fatal("no run expected")
-	}
-}
+	f.tr.err = errors.New("tracker down")
+	f.rep.failMilestone = "result"
 
-func TestHandleRolelessFollowupIsSilentlyIgnored(t *testing.T) {
-	f := newFixture(t, "soemii/playground")
-	handle(t, f, assigned("e1", actor))
-	f.s.runs[0].State = StateSucceeded
-	ev := comment("e2", "hi", false)
-	ev.Actor.Email = "stranger@example.com"
+	err := f.r.Handle(context.Background(), "acme", assigned("e1", actor))
 
-	handle(t, f, ev)
-
-	if len(f.rep.notices) != 0 || len(f.s.inputs) != 1 || len(f.s.runs) != 1 {
-		t.Fatalf("notices=%d inputs=%d runs=%d", len(f.rep.notices), len(f.s.inputs), len(f.s.runs))
+	if !errors.Is(err, f.tr.err) || strings.Contains(err.Error(), "milestone boom") {
+		t.Fatalf("err = %v", err)
 	}
-}
-
-func TestHandleMentionWithoutConversationCreatesQueuedQuestion(t *testing.T) {
-	f := newFixture(t, "soemii/playground")
-	handle(t, f, comment("e1", "@orchivio was ist das?", true))
-	if len(f.s.convs) != 1 || len(f.s.runs) != 1 {
-		t.Fatalf("convs=%d runs=%d", len(f.s.convs), len(f.s.runs))
-	}
-	if r := f.s.runs[0]; r.State != StateQueued || r.Kind != classifier.KindQuestion || r.Branch != "" {
-		t.Fatalf("run = %+v", r)
+	if f.s.runs[0].State != StateFailed {
+		t.Fatalf("state = %s", f.s.runs[0].State)
 	}
 }
 
@@ -498,5 +469,52 @@ func TestStartFollowUpDowngradesWhenAnyOpenInputActorLacksTasksRole(t *testing.T
 	}
 	if !strings.Contains(strings.Join(f.rep.milestones, "|"), classifier.NoteDowngraded) {
 		t.Fatalf("milestones = %v", f.rep.milestones)
+	}
+}
+
+func TestHandleMarkInboundErrorDoesNothingElse(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.s.markErr = errors.New("db down")
+	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(f.s.convs)+len(f.s.inputs)+len(f.s.runs)+len(f.rep.notices)+len(f.rep.milestones) != 0 {
+		t.Fatal("no side effects expected")
+	}
+}
+
+func TestHandleAddInputErrorStartsNoRun(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.s.addErr = errors.New("db down")
+	if err := f.r.Handle(context.Background(), "acme", assigned("e1", actor)); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(f.s.runs) != 0 || len(f.rep.milestones) != 0 {
+		t.Fatal("no run expected")
+	}
+}
+
+func TestHandleRolelessFollowupIsSilentlyIgnored(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	f.s.runs[0].State = StateSucceeded
+	ev := comment("e2", "hi", false)
+	ev.Actor.Email = "stranger@example.com"
+
+	handle(t, f, ev)
+
+	if len(f.rep.notices) != 0 || len(f.s.inputs) != 1 || len(f.s.runs) != 1 {
+		t.Fatalf("notices=%d inputs=%d runs=%d", len(f.rep.notices), len(f.s.inputs), len(f.s.runs))
+	}
+}
+
+func TestHandleMentionWithoutConversationCreatesQueuedQuestion(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, comment("e1", "@orchivio was ist das?", true))
+	if len(f.s.convs) != 1 || len(f.s.runs) != 1 {
+		t.Fatalf("convs=%d runs=%d", len(f.s.convs), len(f.s.runs))
+	}
+	if r := f.s.runs[0]; r.State != StateQueued || r.Kind != classifier.KindQuestion || r.Branch != "" {
+		t.Fatalf("run = %+v", r)
 	}
 }
