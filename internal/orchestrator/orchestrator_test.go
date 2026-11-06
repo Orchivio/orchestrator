@@ -507,3 +507,14 @@ func TestRecordEventRejectsUnknownType(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestCompleteAnsweredEmptyTextPostsFallback(t *testing.T) {
+	f := newFixture(t, "question")
+	f.lease(t)
+	if err := f.complete("w1", workerv1.CompleteRunRequest_ANSWERED, "  ", nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.state() != router.StateSucceeded || len(f.rep.milestones) != 1 || f.rep.milestones[0] != "result: "+textNoAnswer {
+		t.Errorf("state=%s milestones=%v", f.state(), f.rep.milestones)
+	}
+}

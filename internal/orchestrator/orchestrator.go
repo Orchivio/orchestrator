@@ -48,6 +48,7 @@ const (
 	milestoneResult     = config.MilestoneResult
 	abortedPrefix       = "Abgebrochen: "
 	donePrefix          = "Fertig. Pull Request: "
+	textNoAnswer        = "Der Agent hat keine Antwort geliefert."
 	redactedFallbackFmt = `{"type":%q,"redacted":true}`
 )
 
@@ -220,7 +221,11 @@ func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRe
 	text := redact.String(req.GetText())
 	switch req.GetOutcome() {
 	case workerv1.CompleteRunRequest_ANSWERED:
-		err = o.finish(ctx, run, router.StateSucceeded, text, milestoneResult, text)
+		answer := text
+		if strings.TrimSpace(answer) == "" {
+			answer = textNoAnswer
+		}
+		err = o.finish(ctx, run, router.StateSucceeded, text, milestoneResult, answer)
 	case workerv1.CompleteRunRequest_PUSHED:
 		if err = validatePushed(run, req); err == nil {
 			err = o.completePushed(ctx, run, req.GetPushedBranches(), text)
