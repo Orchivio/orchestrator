@@ -42,6 +42,7 @@ type Input struct {
 	Trigger        string
 	RunID          *uuid.UUID
 	CreatedAt      time.Time
+	FromAgent      bool
 }
 
 type Run struct {

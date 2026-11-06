@@ -321,3 +321,51 @@ func TestUpdateRunPersistsKind(t *testing.T) {
 		t.Fatalf("kind = %q, want question", got.Kind)
 	}
 }
+
+func TestHistoryKeepsAgentQuestionBeforeAnswer(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	c := newConversation(t, s)
+	run := newRun(t, s, c, router.StateRunning, base)
+	add := func(email, body string, fromAgent bool, at time.Time) {
+		t.Helper()
+		in := router.Input{ID: uuid.New(), Tenant: c.Tenant, ConversationID: c.ID, ActorEmail: email, Body: body,
+			Trigger: "assigned", CreatedAt: at, FromAgent: fromAgent}
+		if fromAgent {
+			in.RunID = &run.ID
+		}
+		if err := s.AddInput(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("dev@x", "mach X", false, base.Add(time.Minute))
+	if err := s.ClaimInputs(ctx, c.ID, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	add("", "Welcher Branch?", true, base.Add(2*time.Minute))
+	run.State, run.Result, run.UpdatedAt = router.StateWaitingForInput, "Welcher Branch?", base.Add(2*time.Minute)
+	if err := s.UpdateRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	add("dev@x", "main", false, base.Add(3*time.Minute))
+	run.State, run.UpdatedAt = router.StateClassifying, base.Add(4*time.Minute) // resumed, result still the question
+	if err := s.UpdateRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if open, _ := s.OpenInputs(ctx, c.ID); len(open) != 1 || open[0].Body != "main" {
+		t.Fatalf("open = %+v", open)
+	}
+
+	hist, err := s.History(ctx, c.ID)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []router.HistoryEntry{
+		{At: base.Add(time.Minute), Author: "dev@x", Text: "mach X"},
+		{At: base.Add(2 * time.Minute), Author: "Orchivio", Text: "Welcher Branch?", FromAgent: true},
+		{At: base.Add(3 * time.Minute), Author: "dev@x", Text: "main"},
+	}
+	if !reflect.DeepEqual(hist, want) {
+		t.Fatalf("History = %+v\nwant %+v", hist, want)
+	}
+}

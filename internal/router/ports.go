@@ -34,7 +34,9 @@ type Conversation struct {
 	CreatedAt time.Time
 }
 
-// Input is one human message; RunID is nil while the input is open.
+// Input is one message of the conversation: a human comment, or with FromAgent
+// the agent's question that put its run into waiting_for_input. RunID is nil
+// while the input is open.
 type Input struct {
 	ID             uuid.UUID
 	Tenant         string
@@ -44,6 +46,7 @@ type Input struct {
 	Trigger        classifier.Trigger
 	RunID          *uuid.UUID
 	CreatedAt      time.Time
+	FromAgent      bool
 }
 
 // Run is one agent execution. Project holds the tracker key of the project.

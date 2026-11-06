@@ -45,8 +45,8 @@ func (q *Queries) ActiveRun(ctx context.Context, conversationID uuid.UUID) (Run,
 }
 
 const addInput = `-- name: AddInput :exec
-INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type AddInputParams struct {
@@ -58,6 +58,7 @@ type AddInputParams struct {
 	Trigger        string
 	RunID          *uuid.UUID
 	CreatedAt      time.Time
+	FromAgent      bool
 }
 
 func (q *Queries) AddInput(ctx context.Context, arg AddInputParams) error {
@@ -70,6 +71,7 @@ func (q *Queries) AddInput(ctx context.Context, arg AddInputParams) error {
 		arg.Trigger,
 		arg.RunID,
 		arg.CreatedAt,
+		arg.FromAgent,
 	)
 	return err
 }
@@ -353,9 +355,11 @@ func (q *Queries) ListEvents(ctx context.Context, runID uuid.UUID) ([]Event, err
 }
 
 const listFinishedRuns = `-- name: ListFinishedRuns :many
-SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at FROM runs WHERE conversation_id = $1 AND result <> '' ORDER BY created_at, id
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at FROM runs WHERE conversation_id = $1 AND result <> ''
+  AND state IN ('succeeded', 'failed', 'cancelled') ORDER BY created_at, id
 `
 
+// A waiting run's result is its question, already a from_agent input; only final results count.
 func (q *Queries) ListFinishedRuns(ctx context.Context, conversationID uuid.UUID) ([]Run, error) {
 	rows, err := q.db.Query(ctx, listFinishedRuns, conversationID)
 	if err != nil {
@@ -395,7 +399,7 @@ func (q *Queries) ListFinishedRuns(ctx context.Context, conversationID uuid.UUID
 }
 
 const listInputs = `-- name: ListInputs :many
-SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at FROM inputs WHERE conversation_id = $1 ORDER BY created_at, id
+SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent FROM inputs WHERE conversation_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListInputs(ctx context.Context, conversationID uuid.UUID) ([]Input, error) {
@@ -416,6 +420,7 @@ func (q *Queries) ListInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 			&i.Trigger,
 			&i.RunID,
 			&i.CreatedAt,
+			&i.FromAgent,
 		); err != nil {
 			return nil, err
 		}
@@ -447,7 +452,7 @@ func (q *Queries) MarkInbound(ctx context.Context, arg MarkInboundParams) (int64
 }
 
 const openInputs = `-- name: OpenInputs :many
-SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at FROM inputs WHERE conversation_id = $1 AND run_id IS NULL
+SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent FROM inputs WHERE conversation_id = $1 AND run_id IS NULL
 ORDER BY created_at, id
 `
 
@@ -469,6 +474,7 @@ func (q *Queries) OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 			&i.Trigger,
 			&i.RunID,
 			&i.CreatedAt,
+			&i.FromAgent,
 		); err != nil {
 			return nil, err
 		}

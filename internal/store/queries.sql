@@ -13,8 +13,8 @@ INSERT INTO conversations (id, tenant_id, project, ticket_ref, created_at)
 VALUES ($1, $2, $3, $4, $5);
 
 -- name: AddInput :exec
-INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: OpenInputs :many
 SELECT * FROM inputs WHERE conversation_id = $1 AND run_id IS NULL
@@ -27,7 +27,9 @@ UPDATE inputs SET run_id = $2 WHERE conversation_id = $1 AND run_id IS NULL;
 SELECT * FROM inputs WHERE conversation_id = $1 ORDER BY created_at, id;
 
 -- name: ListFinishedRuns :many
-SELECT * FROM runs WHERE conversation_id = $1 AND result <> '' ORDER BY created_at, id;
+-- A waiting run's result is its question, already a from_agent input; only final results count.
+SELECT * FROM runs WHERE conversation_id = $1 AND result <> ''
+  AND state IN ('succeeded', 'failed', 'cancelled') ORDER BY created_at, id;
 
 -- name: ActiveRun :one
 SELECT * FROM runs

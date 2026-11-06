@@ -125,7 +125,7 @@ func (s *Store) CreateConversation(ctx context.Context, c router.Conversation) e
 func (s *Store) AddInput(ctx context.Context, in router.Input) error {
 	return s.q.AddInput(ctx, db.AddInputParams{
 		ID: in.ID, TenantID: in.Tenant, ConversationID: in.ConversationID, ActorEmail: in.ActorEmail,
-		Body: in.Body, Trigger: string(in.Trigger), RunID: in.RunID, CreatedAt: in.CreatedAt})
+		Body: in.Body, Trigger: string(in.Trigger), RunID: in.RunID, CreatedAt: in.CreatedAt, FromAgent: in.FromAgent})
 }
 
 func (s *Store) OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]router.Input, error) {
@@ -193,7 +193,8 @@ func (s *Store) LeaseNext(ctx context.Context, workerID string, until time.Time)
 	return runOrNil(row, err)
 }
 
-// History merges human inputs and agent results chronologically.
+// History merges inputs (human comments and agent questions) and final agent
+// results chronologically.
 func (s *Store) History(ctx context.Context, conversationID uuid.UUID) ([]router.HistoryEntry, error) {
 	inputs, err := s.q.ListInputs(ctx, conversationID)
 	if err != nil {
@@ -205,7 +206,10 @@ func (s *Store) History(ctx context.Context, conversationID uuid.UUID) ([]router
 	}
 	entries := make([]router.HistoryEntry, 0, len(inputs)+len(runs))
 	for _, in := range inputs {
-		if in.Body != "" {
+		switch {
+		case in.FromAgent:
+			entries = append(entries, router.HistoryEntry{At: in.CreatedAt.UTC(), Author: agentAuthor, Text: in.Body, FromAgent: true})
+		case in.Body != "":
 			entries = append(entries, router.HistoryEntry{At: in.CreatedAt.UTC(), Author: in.ActorEmail, Text: in.Body})
 		}
 	}
@@ -273,7 +277,7 @@ func toConversation(c db.Conversation) router.Conversation {
 
 func toInput(i db.Input) router.Input {
 	return router.Input{ID: i.ID, Tenant: i.TenantID, ConversationID: i.ConversationID, ActorEmail: i.ActorEmail,
-		Body: i.Body, Trigger: classifier.Trigger(i.Trigger), RunID: i.RunID, CreatedAt: i.CreatedAt.UTC()}
+		Body: i.Body, Trigger: classifier.Trigger(i.Trigger), RunID: i.RunID, CreatedAt: i.CreatedAt.UTC(), FromAgent: i.FromAgent}
 }
 
 func toRun(r db.Run) (router.Run, error) {
