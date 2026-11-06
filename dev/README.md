@@ -43,7 +43,7 @@ go test -tags e2e ./internal/e2e/
 
 ## Linear einrichten
 
-1. Lege in deinem Workspace einen technischen Nutzer **„Orchivio“** an (eigener Account, Mitglied im Team).
+1. Lege in deinem Workspace einen technischen Nutzer **„Orchivio“** an (eigener Account, Mitglied im Team). Er darf nicht dein eigener Account sein: Kommentare des Nutzers, dem der API-Key gehört, ignoriert der Adapter (sonst würde Orchivio auf seine eigenen Kommentare reagieren). Mit deinem eigenen Key passiert auf deine Kommentare also nichts.
 2. Als dieser Nutzer: Settings, Account, Security & access, **Personal API keys**, neuen Key erzeugen. Er kommt als `LINEAR_TOKEN_ACME` in die `.env`.
 3. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört in `LINEAR_TEAM_KEYS` und in `trackerKey` der Config.
 4. Bedienung: In einem Ticket des Teams `@Orchivio` im Kommentar erwähnen, oder das Ticket dem Nutzer Orchivio zuweisen.
@@ -52,9 +52,10 @@ go test -tags e2e ./internal/e2e/
 
 `dev/config/acme.yaml` bearbeiten:
 
-- `roles.questions` und `roles.tasks`: deine Linear-E-Mail-Adresse statt `you@example.com`. Wer nicht gelistet ist, bekommt den Hinweis „Rolle fehlt“ und löst keinen Run aus.
+- `roles.questions` und `roles.tasks`: deine Linear-E-Mail-Adresse statt `you@example.com`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
 - `projects[].trackerKey`: dein Team-Key.
 - `repos[].slug`, `classifier.defaultRepo`, `classifier.repoLabels`: dein Test-Repo (`owner/name`).
+- `profiles.*.model` (`model:`): die Modell-ID gegen die Modelle prüfen, die dein Key bzw. dein Abo nutzen darf. Ein Alias wie `sonnet` funktioniert mit Claude Code.
 
 ## Starten und Stoppen
 
@@ -76,7 +77,7 @@ Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 543
 
 - [ ] Linear-Ticket im Team `ORC`, Kommentar „@Orchivio Was steht in der README?“ ergibt eine Antwort im Ticket; der Timeline-Link öffnet JSON.
 - [ ] Ticket Orchivio zuweisen, Kommentar „Füge einen Abschnitt Kontakt in die README ein“ ergibt einen PR in `soemii/orchivio-playground` auf einem Branch `orchivio/orc-…`.
-- [ ] Kommentar einer nicht konfigurierten Person ergibt den Hinweis „Rolle fehlt“, es startet kein Run.
+- [ ] Eine nicht konfigurierte Person erwähnt `@Orchivio` oder weist das Ticket Orchivio zu: Das ergibt den Hinweis „Rolle fehlt“, es startet kein Run. Ein einfacher Kommentar ohne Erwähnung von ihr wird still ignoriert (kein Hinweis).
 - [ ] Unklare Aufgabe ergibt eine Rückfrage im Ticket; deine Antwort startet einen neuen Lauf mit Verlauf.
 
 ## Bekannte Grenzen des Durchstichs
