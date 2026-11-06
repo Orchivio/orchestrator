@@ -60,7 +60,8 @@ func run(parent context.Context, log *slog.Logger) error {
 	if dbURL == "" || configDir == "" {
 		return errors.New("DATABASE_URL and ORCHIVIO_CONFIG_DIR are required")
 	}
-	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", ":7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
+	// insecure gRPC, bind localhost; mTLS before remote workers.
+	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", "127.0.0.1:7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
 	publicURL := env("ORCHIVIO_PUBLIC_URL", "http://localhost:8088")
 
 	cfg, err := config.NewSync(configDir, configReloadInterval, log)

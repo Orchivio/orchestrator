@@ -63,7 +63,7 @@ dev/run-all.sh   # Postgres, Proxy, Build, alle Prozesse im Hintergrund
 dev/stop-all.sh  # beendet die Prozesse und den Proxy-Container
 ```
 
-Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 5432, 7070, 7101, 7102, 7201 und 8088 müssen frei sein. Ein zweiter Start bricht ab, solange Prozesse des ersten laufen; dann zuerst `dev/stop-all.sh` ausführen.
+Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 5432, 7070, 7101, 7102, 7201 und 8088 müssen frei sein. Alle außer dem Webhook (`:7102`) lauschen nur auf `127.0.0.1`: gRPC läuft unverschlüsselt und ohne Authentifizierung. Ein Worker auf einem anderen Rechner braucht eine explizite Adresse (`ORCHIVIO_GRPC_ADDR`) und vorher mTLS. Ein zweiter Start bricht ab, solange Prozesse des ersten laufen; dann zuerst `dev/stop-all.sh` ausführen.
 
 `run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten) und wartet bis zu 30 Sekunden, bis der Server antwortet. Postgres bleibt nach dem Stoppen laufen (`podman compose -f dev/compose.yaml down` beendet es).
 
@@ -82,6 +82,7 @@ Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 543
 ## Bekannte Grenzen des Durchstichs
 
 - Keine OIDC-Absicherung der Timeline (nur an `127.0.0.1` gebunden).
+- gRPC ohne TLS und ohne Authentifizierung (Server, Adapter standardmäßig nur an `127.0.0.1` gebunden); mTLS vor entfernten Workern.
 - Keine Kommentare im PR-Review.
 - Kein Resume und keine Snapshots: Jede Antwort startet einen neuen Lauf.
 - Nur Polling, keine Webhooks.

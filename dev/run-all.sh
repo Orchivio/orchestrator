@@ -62,11 +62,11 @@ start() {
 }
 
 echo "Starte Prozesse ..."
-start linear-adapter ORCHIVIO_GRPC_ADDR=:7101 ORCHIVIO_WEBHOOK_ADDR=:7102 "$bin/orchivio-linear-adapter"
-start github-adapter ORCHIVIO_GRPC_ADDR=:7201 "$bin/orchivio-github-adapter"
-start server ORCHIVIO_CONFIG_DIR="$here/config" ORCHIVIO_GRPC_ADDR=:7070 \
+start linear-adapter ORCHIVIO_GRPC_ADDR=127.0.0.1:7101 ORCHIVIO_WEBHOOK_ADDR=:7102 "$bin/orchivio-linear-adapter"
+start github-adapter ORCHIVIO_GRPC_ADDR=127.0.0.1:7201 "$bin/orchivio-github-adapter"
+start server ORCHIVIO_CONFIG_DIR="$here/config" ORCHIVIO_GRPC_ADDR=127.0.0.1:7070 \
   ORCHIVIO_HTTP_ADDR=127.0.0.1:8088 ORCHIVIO_PUBLIC_URL=http://localhost:8088 "$bin/orchivio-server"
-start worker ORCHIVIO_SERVER_ADDR=localhost:7070 ORCHIVIO_WORKER_ID=local-1 \
+start worker ORCHIVIO_SERVER_ADDR=127.0.0.1:7070 ORCHIVIO_WORKER_ID=local-1 \
   ORCHIVIO_WORK_DIR="$here/work" ORCHIVIO_PROXY_URL=http://orchivio-proxy:8090 \
   ORCHIVIO_SANDBOX_IMAGE=localhost/orchivio-sandbox-claude:dev ORCHIVIO_SANDBOX_NETWORK=orchivio-sandbox \
   "$bin/orchivio-worker" run
