@@ -447,3 +447,30 @@ func TestHandleResumeKeepsBranchOfWaitingRun(t *testing.T) {
 		t.Fatalf("runs=%d resumed=%+v, want branch %q", len(f.s.runs), f.s.runs[1], first.Branch)
 	}
 }
+
+func TestHandleMentionInTaskConversationKeepsTaskKind(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	first := f.s.runs[0]
+	f.s.runs[0].State = StateSucceeded
+
+	handle(t, f, comment("e2", "@orchivio bitte noch Y", true))
+
+	second := f.s.runs[1]
+	if second.Kind != classifier.KindTask || second.Branch != first.Branch {
+		t.Fatalf("second = %+v", second)
+	}
+}
+
+func TestHandleMentionInTaskConversationQuestionLabelWins(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	f.s.runs[0].State = StateSucceeded
+	f.tr.labels = []string{"orchivio:frage"}
+
+	handle(t, f, comment("e2", "@orchivio was ist Y?", true))
+
+	if k := f.s.runs[1].Kind; k != classifier.KindQuestion {
+		t.Fatalf("kind = %s", k)
+	}
+}

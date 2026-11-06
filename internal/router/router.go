@@ -183,6 +183,9 @@ func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project,
 	previousKind := ""
 	if last != nil {
 		previousKind = last.Kind
+		if trigger == classifier.TriggerMentioned {
+			trigger = classifier.TriggerFollowup // a mention continues the conversation's kind; labels still win
+		}
 	}
 	d := classifier.Classify(p, classifier.Input{Trigger: trigger, PreviousKind: previousKind, Labels: ticket.GetLabels(), ActorEmail: email})
 	run.Kind, run.Repos = d.Kind, d.Repos
