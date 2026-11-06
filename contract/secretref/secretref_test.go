@@ -30,3 +30,23 @@ func TestEnvResolveRejectsOtherScheme(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestResolveErrorsNeverEchoRawValue(t *testing.T) {
+	p := Env{Lookup: lookupFrom(nil)}
+	tests := []struct {
+		ref, want string
+		target    error
+	}{
+		{"sk-ant-raw-secret", "unsupported secret scheme", ErrUnsupportedScheme},
+		{"vault://sk-ant-raw-secret", "unsupported secret scheme: vault", ErrUnsupportedScheme},
+		{"sk-ant-raw-secret://x", "unsupported secret scheme", ErrUnsupportedScheme},
+		{"env://sk-ant-raw-secret", "secret not found: malformed env reference", ErrNotFound},
+		{"env://MISSING_NAME", "secret not found: MISSING_NAME", ErrNotFound},
+	}
+	for _, tc := range tests {
+		_, err := p.Resolve(tc.ref)
+		if !errors.Is(err, tc.target) || err.Error() != tc.want {
+			t.Errorf("Resolve(%q) err = %v, want %q", tc.ref, err, tc.want)
+		}
+	}
+}

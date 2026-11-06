@@ -4,6 +4,7 @@ package secretref
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -24,10 +25,23 @@ type Env struct {
 
 const envScheme = "env://"
 
+// Errors echo at most a plain scheme or a well-formed variable name: a raw secret
+// pasted into a *_REF variable must never reach a log.
+var (
+	schemePattern  = regexp.MustCompile(`^[a-z]{1,16}$`)
+	envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
+
 func (e Env) Resolve(ref string) (string, error) {
 	name, ok := strings.CutPrefix(ref, envScheme)
 	if !ok {
-		return "", fmt.Errorf("%w: %q", ErrUnsupportedScheme, ref)
+		if scheme, _, found := strings.Cut(ref, "://"); found && schemePattern.MatchString(scheme) {
+			return "", fmt.Errorf("%w: %s", ErrUnsupportedScheme, scheme)
+		}
+		return "", ErrUnsupportedScheme
+	}
+	if !envNamePattern.MatchString(name) {
+		return "", fmt.Errorf("%w: malformed env reference", ErrNotFound)
 	}
 	v, found := e.Lookup(name)
 	if !found {
