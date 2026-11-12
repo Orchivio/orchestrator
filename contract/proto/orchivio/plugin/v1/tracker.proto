@@ -4,7 +4,7 @@ package orchivio.plugin.v1;
 
 import "orchivio/plugin/v1/common.proto";
 
-option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+option go_package = "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1";
 
 service TrackerAdapter {
   rpc GetCapabilities(GetCapabilitiesRequest) returns (Capabilities);

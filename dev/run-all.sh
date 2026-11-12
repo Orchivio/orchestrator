@@ -48,13 +48,13 @@ echo "Starte Postgres ..."
 podman compose -f "$here/compose.yaml" up -d
 
 echo "Starte Proxy und baue Images ..."
-"$root/orchivio-worker/dev/up.sh"
+"$root/worker-podman/dev/up.sh"
 
 echo "Baue Binaries ..."
 (cd "$server_dir" && go build -o "$bin/orchivio-server" ./cmd/orchivio-server)
-(cd "$root/orchivio-worker" && go build -o "$bin/orchivio-worker" ./cmd/orchivio-worker)
-(cd "$root/orchivio-adapter-linear" && go build -o "$bin/orchivio-linear-adapter" ./cmd/orchivio-linear-adapter)
-(cd "$root/orchivio-adapter-github" && go build -o "$bin/orchivio-github-adapter" ./cmd/orchivio-github-adapter)
+(cd "$root/worker-podman" && go build -o "$bin/orchivio-worker" ./cmd/orchivio-worker)
+(cd "$root/adapter-linear" && go build -o "$bin/orchivio-linear-adapter" ./cmd/orchivio-linear-adapter)
+(cd "$root/adapter-github" && go build -o "$bin/orchivio-github-adapter" ./cmd/orchivio-github-adapter)
 
 # start <name> <env-Zuweisungen...> -- <befehl...>: Prozess im Hintergrund, Log und PID merken.
 start() {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/soemii/orchivio-server/internal/config"
+	"github.com/orchivio/orchestrator/internal/config"
 )
 
 func fixture() config.Project {

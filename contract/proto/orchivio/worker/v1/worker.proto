@@ -7,7 +7,7 @@ import "google/protobuf/timestamp.proto";
 import "orchivio/plugin/v1/agent.proto";
 import "orchivio/plugin/v1/codehost.proto";
 
-option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1;workerv1";
+option go_package = "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1;workerv1";
 
 service WorkerService {
   rpc Register(RegisterRequest) returns (RegisterResponse);

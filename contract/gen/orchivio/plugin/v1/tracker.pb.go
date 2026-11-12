@@ -468,7 +468,7 @@ const file_orchivio_plugin_v1_tracker_proto_rawDesc = "" +
 	"\x0fGetCapabilities\x12*.orchivio.plugin.v1.GetCapabilitiesRequest\x1a .orchivio.plugin.v1.Capabilities\x12[\n" +
 	"\fStreamEvents\x12'.orchivio.plugin.v1.StreamEventsRequest\x1a .orchivio.plugin.v1.TrackerEvent0\x01\x12M\n" +
 	"\tGetTicket\x12$.orchivio.plugin.v1.GetTicketRequest\x1a\x1a.orchivio.plugin.v1.Ticket\x12^\n" +
-	"\vPostComment\x12&.orchivio.plugin.v1.PostCommentRequest\x1a'.orchivio.plugin.v1.PostCommentResponseBLZJgithub.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\vPostComment\x12&.orchivio.plugin.v1.PostCommentRequest\x1a'.orchivio.plugin.v1.PostCommentResponseBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_tracker_proto_rawDescOnce sync.Once

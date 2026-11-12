@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/soemii/orchivio-server/contract/redact"
-	"github.com/soemii/orchivio-server/internal/config"
-	"github.com/soemii/orchivio-server/internal/router"
+	"github.com/orchivio/orchestrator/contract/redact"
+	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/router"
 )
 
 // TrackerClient posts comments to the tenant's tracker.

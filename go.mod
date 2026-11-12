@@ -1,4 +1,4 @@
-module github.com/soemii/orchivio-server
+module github.com/orchivio/orchestrator
 
 go 1.26.3
 
@@ -6,7 +6,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/soemii/orchivio-server/contract v0.0.0-00010101000000-000000000000
+	github.com/orchivio/orchestrator/contract v0.0.0-00010101000000-000000000000
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	google.golang.org/grpc v1.85.0
@@ -73,4 +73,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 )
 
-replace github.com/soemii/orchivio-server/contract => ./contract
+replace github.com/orchivio/orchestrator/contract => ./contract

@@ -1,4 +1,4 @@
-module github.com/soemii/orchivio-server/contract
+module github.com/orchivio/orchestrator/contract
 
 go 1.26.3
 

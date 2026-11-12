@@ -15,8 +15,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
-	"github.com/soemii/orchivio-server/internal/config"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
+	"github.com/orchivio/orchestrator/internal/config"
 )
 
 type fakeTracker struct {

@@ -18,15 +18,15 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 
-	workerv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1"
-	"github.com/soemii/orchivio-server/internal/adapters"
-	"github.com/soemii/orchivio-server/internal/config"
-	"github.com/soemii/orchivio-server/internal/grpcapi"
-	"github.com/soemii/orchivio-server/internal/httpapi"
-	"github.com/soemii/orchivio-server/internal/orchestrator"
-	"github.com/soemii/orchivio-server/internal/reporter"
-	"github.com/soemii/orchivio-server/internal/router"
-	"github.com/soemii/orchivio-server/internal/store"
+	workerv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1"
+	"github.com/orchivio/orchestrator/internal/adapters"
+	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/grpcapi"
+	"github.com/orchivio/orchestrator/internal/httpapi"
+	"github.com/orchivio/orchestrator/internal/orchestrator"
+	"github.com/orchivio/orchestrator/internal/reporter"
+	"github.com/orchivio/orchestrator/internal/router"
+	"github.com/orchivio/orchestrator/internal/store"
 )
 
 const (

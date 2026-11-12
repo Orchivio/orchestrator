@@ -18,11 +18,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/soemii/orchivio-server/internal/classifier"
-	"github.com/soemii/orchivio-server/internal/httpapi"
-	"github.com/soemii/orchivio-server/internal/orchestrator"
-	"github.com/soemii/orchivio-server/internal/router"
-	"github.com/soemii/orchivio-server/internal/store/db"
+	"github.com/orchivio/orchestrator/internal/classifier"
+	"github.com/orchivio/orchestrator/internal/httpapi"
+	"github.com/orchivio/orchestrator/internal/orchestrator"
+	"github.com/orchivio/orchestrator/internal/router"
+	"github.com/orchivio/orchestrator/internal/store/db"
 )
 
 //go:embed migrations/*.sql

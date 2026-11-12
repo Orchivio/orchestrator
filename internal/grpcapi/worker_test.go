@@ -12,17 +12,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/soemii/orchivio-server/internal/config"
-	"github.com/soemii/orchivio-server/internal/orchestrator"
-	"github.com/soemii/orchivio-server/internal/router"
+	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/orchestrator"
+	"github.com/orchivio/orchestrator/internal/router"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
-	workerv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
+	workerv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1"
 )
 
 const cfgYAML = `tenant: acme

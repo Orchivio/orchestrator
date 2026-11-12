@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/soemii/orchivio-server/internal/classifier"
-	"github.com/soemii/orchivio-server/internal/config"
+	"github.com/orchivio/orchestrator/internal/classifier"
+	"github.com/orchivio/orchestrator/internal/config"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 )
 
 const (

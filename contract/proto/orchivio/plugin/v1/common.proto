@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package orchivio.plugin.v1;
 
-option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+option go_package = "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1";
 
 message Capabilities {
   string contract_version = 1; // "plugin.v1"

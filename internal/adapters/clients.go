@@ -11,8 +11,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
-	"github.com/soemii/orchivio-server/internal/config"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
+	"github.com/orchivio/orchestrator/internal/config"
 )
 
 const contractVersion = "plugin.v1"

@@ -7,7 +7,7 @@
 package workerv1
 
 import (
-	v1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
+	v1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -791,7 +791,7 @@ const file_orchivio_worker_v1_worker_proto_rawDesc = "" +
 	"\bLeaseRun\x12#.orchivio.worker.v1.LeaseRunRequest\x1a$.orchivio.worker.v1.LeaseRunResponse\x12c\n" +
 	"\fReportEvents\x12'.orchivio.worker.v1.ReportEventsRequest\x1a(.orchivio.worker.v1.ReportEventsResponse(\x01\x12h\n" +
 	"\x12GetRepoCredentials\x12-.orchivio.worker.v1.GetRepoCredentialsRequest\x1a#.orchivio.plugin.v1.RepoCredentials\x12^\n" +
-	"\vCompleteRun\x12&.orchivio.worker.v1.CompleteRunRequest\x1a'.orchivio.worker.v1.CompleteRunResponseBLZJgithub.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1;workerv1b\x06proto3"
+	"\vCompleteRun\x12&.orchivio.worker.v1.CompleteRunRequest\x1a'.orchivio.worker.v1.CompleteRunResponseBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1;workerv1b\x06proto3"
 
 var (
 	file_orchivio_worker_v1_worker_proto_rawDescOnce sync.Once

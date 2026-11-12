@@ -300,7 +300,7 @@ const file_orchivio_plugin_v1_codehost_proto_rawDesc = "" +
 	"\x0fCodeHostAdapter\x12_\n" +
 	"\x0fGetCapabilities\x12*.orchivio.plugin.v1.GetCapabilitiesRequest\x1a .orchivio.plugin.v1.Capabilities\x12l\n" +
 	"\x14IssueRepoCredentials\x12/.orchivio.plugin.v1.IssueRepoCredentialsRequest\x1a#.orchivio.plugin.v1.RepoCredentials\x12^\n" +
-	"\x0fOpenPullRequest\x12*.orchivio.plugin.v1.OpenPullRequestRequest\x1a\x1f.orchivio.plugin.v1.PullRequestBLZJgithub.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\x0fOpenPullRequest\x12*.orchivio.plugin.v1.OpenPullRequestRequest\x1a\x1f.orchivio.plugin.v1.PullRequestBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_codehost_proto_rawDescOnce sync.Once

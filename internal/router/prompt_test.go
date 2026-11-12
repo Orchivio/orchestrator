@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 )
 
 func TestBuildPromptContainsTicketAndHistory(t *testing.T) {

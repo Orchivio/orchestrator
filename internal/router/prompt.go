@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
-	"github.com/soemii/orchivio-server/internal/classifier"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
+	"github.com/orchivio/orchestrator/internal/classifier"
 )
 
 const (

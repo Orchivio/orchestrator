@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/soemii/orchivio-server/internal/config"
+	"github.com/orchivio/orchestrator/internal/config"
 )
 
 type Trigger string

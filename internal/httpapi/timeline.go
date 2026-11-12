@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/soemii/orchivio-server/internal/router"
+	"github.com/orchivio/orchestrator/internal/router"
 )
 
 // Event is one stored run event.

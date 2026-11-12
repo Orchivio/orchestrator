@@ -14,15 +14,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/soemii/orchivio-server/contract/redact"
-	"github.com/soemii/orchivio-server/internal/config"
-	"github.com/soemii/orchivio-server/internal/router"
+	"github.com/orchivio/orchestrator/contract/redact"
+	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/router"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
-	workerv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
+	workerv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1"
 )
 
 var (

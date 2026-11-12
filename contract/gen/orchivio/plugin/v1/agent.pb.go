@@ -359,7 +359,7 @@ const file_orchivio_plugin_v1_agent_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsdBLZJgithub.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsdBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_agent_proto_rawDescOnce sync.Once

@@ -226,7 +226,7 @@ const file_orchivio_plugin_v1_common_proto_rawDesc = "" +
 	"\x05Actor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04nameBLZJgithub.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\x04name\x18\x03 \x01(\tR\x04nameBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_common_proto_rawDescOnce sync.Once

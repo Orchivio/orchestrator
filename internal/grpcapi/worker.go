@@ -8,12 +8,12 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/soemii/orchivio-server/internal/orchestrator"
+	"github.com/orchivio/orchestrator/internal/orchestrator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pluginv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1"
-	workerv1 "github.com/soemii/orchivio-server/contract/gen/orchivio/worker/v1"
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
+	workerv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1"
 )
 
 const contractVersion = "worker.v1"

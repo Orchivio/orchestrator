@@ -4,7 +4,7 @@ package orchivio.plugin.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/soemii/orchivio-server/contract/gen/orchivio/plugin/v1;pluginv1";
+option go_package = "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1";
 
 // Runtime-adapter messages. Transport in the walking skeleton: protojson lines over stdin/stdout.
 message RunSpec {
