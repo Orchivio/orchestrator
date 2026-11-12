@@ -17,7 +17,12 @@ if [[ -f "$here/.env" ]]; then
 fi
 
 missing=()
-for v in LINEAR_TOKEN_ACME LINEAR_API_KEY_REF LINEAR_TEAM_KEYS GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF DATABASE_URL; do
+if [[ -n "${LINEAR_CLIENT_ID:-}" ]]; then
+  linear_vars="LINEAR_CLIENT_SECRET_REF"
+else
+  linear_vars="LINEAR_API_KEY_REF"
+fi
+for v in $linear_vars LINEAR_TEAM_KEYS GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF DATABASE_URL; do
   [[ -n "${!v:-}" ]] || missing+=("$v")
 done
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then

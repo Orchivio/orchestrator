@@ -43,10 +43,15 @@ go test -tags e2e ./internal/e2e/
 
 ## Linear einrichten
 
-1. Lege in deinem Workspace einen technischen Nutzer **„Orchivio“** an (eigener Account, Mitglied im Team). Er darf nicht dein eigener Account sein: Kommentare des Nutzers, dem der API-Key gehört, ignoriert der Adapter (sonst würde Orchivio auf seine eigenen Kommentare reagieren). Mit deinem eigenen Key passiert auf deine Kommentare also nichts.
-2. Als dieser Nutzer: Settings, Account, Security & access, **Personal API keys**, neuen Key erzeugen. Er kommt als `LINEAR_TOKEN_ACME` in die `.env`.
-3. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört in `LINEAR_TEAM_KEYS` und in `trackerKey` der Config.
-4. Bedienung: In einem Ticket des Teams `@Orchivio` im Kommentar erwähnen, oder das Ticket dem Nutzer Orchivio zuweisen.
+Orchivio läuft in Linear als **App-User** einer OAuth-App: eigener Nutzer, erwähnbar und zuweisbar, kostet keinen Platz. Du brauchst Admin-Rechte im Workspace.
+
+1. Settings, API, **OAuth applications**, neue App anlegen (<https://linear.app/settings/api/applications/new>). Name **Orchivio** (wird zum Anzeigenamen des App-Users). Callback-URL ist Pflicht, wird aber nicht genutzt: `http://localhost/callback`. Webhooks aus.
+2. In der App **Client credentials** aktivieren. Client-ID und Client-Secret kommen als `LINEAR_CLIENT_ID` und `LINEAR_CLIENT_SECRET` in die `.env`.
+3. Beim Start holt der Adapter selbst ein Token (`client_credentials`, Scopes `read,write,app:assignable,app:mentionable`, 30 Tage gültig) und erneuert es rechtzeitig. Damit erscheint der App-User im Workspace. Er hat Zugriff auf alle öffentlichen Teams.
+4. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört in `LINEAR_TEAM_KEYS` und in `trackerKey` der Config.
+5. Bedienung: In einem Ticket des Teams `@Orchivio` im Kommentar erwähnen, oder das Ticket an Orchivio delegieren (Zuweisen-Menü, Orchivio auswählen).
+
+Alternative ohne OAuth-App: eigener Nutzer „Orchivio“ (zweiter Account, kostet einen Platz) mit persönlichem API-Key als `LINEAR_TOKEN_ACME` und `LINEAR_API_KEY_REF`, `LINEAR_CLIENT_ID` leer lassen. Nicht der eigene Account: Kommentare des Key-Besitzers ignoriert der Adapter.
 
 ## Konfiguration anpassen
 
