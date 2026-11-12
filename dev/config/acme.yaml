@@ -1,6 +1,6 @@
 tenant: acme
-tracker: { name: linear, address: localhost:7101 }
-codeHost: { name: github, address: localhost:7201 }
+tracker: { name: linear, address: adapter-linear:7101 }
+codeHost: { name: github, address: adapter-github:7201 }
 profiles:
   default: { runtime: claude-code, model: claude-sonnet-5-5, maxDuration: 20m, instructions: "Antworte auf Deutsch." }
 projects:

@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Beendet die von run-all.sh gestarteten Prozesse und den Proxy-Container.
+# Stoppt den Orchivio-Stack. Die Datenbank bleibt im Volume erhalten
+# (endgültig löschen: podman compose -f dev/compose.yaml down -v).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bin="$here/bin"
-# shellcheck disable=SC1091
-source "$here/pids.sh"
-stop_recorded "$here/logs/pids"
-podman rm -f orchivio-proxy >/dev/null 2>&1 || true
-echo "Gestoppt. Postgres läuft weiter (podman compose -f dev/compose.yaml down zum Beenden)."
+ORCHIVIO_PODMAN_SOCKET=/dev/null ORCHIVIO_WORK_DIR=/tmp podman compose -f "$here/compose.yaml" down
