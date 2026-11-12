@@ -1,3 +1,8 @@
+# Orchivio dev stack. Uses only published images from ghcr.io; nothing is
+# built locally. ORCHIVIO_VERSION picks the image tag (main or a release).
+# run-all.sh sets ORCHIVIO_PODMAN_SOCKET and ORCHIVIO_WORK_DIR.
+name: orchivio
+
 services:
   postgres:
     image: docker.io/library/postgres:17-alpine
@@ -5,10 +10,84 @@ services:
       POSTGRES_USER: orchivio
       POSTGRES_PASSWORD: orchivio
       POSTGRES_DB: orchivio
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - orchivio-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "orchivio"]
+      interval: 2s
+      retries: 15
+
+  orchestrator:
+    image: ghcr.io/orchivio/orchestrator:${ORCHIVIO_VERSION:-main}
+    environment:
+      DATABASE_URL: postgres://orchivio:orchivio@postgres:5432/orchivio?sslmode=disable
+      ORCHIVIO_CONFIG_DIR: /config
+      ORCHIVIO_GRPC_ADDR: 0.0.0.0:7070
+      ORCHIVIO_HTTP_ADDR: 0.0.0.0:8088
+      ORCHIVIO_PUBLIC_URL: http://localhost:8088
+    volumes:
+      - ./config:/config:ro
+    ports:
+      - "127.0.0.1:8088:8088" # timeline only; gRPC stays inside the stack
+    depends_on:
+      postgres: { condition: service_healthy }
+      adapter-linear: { condition: service_started }
+      adapter-github: { condition: service_started }
+
+  adapter-linear:
+    image: ghcr.io/orchivio/adapter-linear:${ORCHIVIO_VERSION:-main}
+    environment:
+      LINEAR_CLIENT_ID: ${LINEAR_CLIENT_ID:-}
+      LINEAR_CLIENT_SECRET: ${LINEAR_CLIENT_SECRET:-}
+      LINEAR_CLIENT_SECRET_REF: ${LINEAR_CLIENT_SECRET_REF:-}
+      LINEAR_TOKEN_ACME: ${LINEAR_TOKEN_ACME:-}
+      LINEAR_API_KEY_REF: ${LINEAR_API_KEY_REF:-}
+      LINEAR_TEAM_KEYS: ${LINEAR_TEAM_KEYS}
+      LINEAR_POLL_INTERVAL: ${LINEAR_POLL_INTERVAL:-10s}
+      ORCHIVIO_GRPC_ADDR: 0.0.0.0:7101
+
+  adapter-github:
+    image: ghcr.io/orchivio/adapter-github:${ORCHIVIO_VERSION:-main}
+    environment:
+      GITHUB_APP_ID: ${GITHUB_APP_ID}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
+      GITHUB_APP_PRIVATE_KEY_REF: ${GITHUB_APP_PRIVATE_KEY_REF}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      ORCHIVIO_GRPC_ADDR: 0.0.0.0:7201
+
+  # Credential/egress proxy: the only container on orchivio-sandbox with a way out.
+  proxy:
+    image: ghcr.io/orchivio/worker-podman:${ORCHIVIO_VERSION:-main}
+    container_name: orchivio-proxy
+    command: ["proxy"]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+    networks: [sandbox, egress]
+
+  # Starts sandbox containers through the podman socket. Work dir has the same
+  # path in this container and in the podman VM so sandbox mounts resolve.
+  worker:
+    image: ghcr.io/orchivio/worker-podman:${ORCHIVIO_VERSION:-main}
+    command: ["run"]
+    environment:
+      ORCHIVIO_SERVER_ADDR: orchestrator:7070
+      ORCHIVIO_WORKER_ID: local-1
+      ORCHIVIO_WORK_DIR: ${ORCHIVIO_WORK_DIR}
+      ORCHIVIO_SANDBOX_IMAGE: ghcr.io/orchivio/adapter-claude-code:${ORCHIVIO_VERSION:-main}
+      ORCHIVIO_PROXY_URL: http://orchivio-proxy:8090
+    volumes:
+      - ${ORCHIVIO_PODMAN_SOCKET}:/run/podman/podman.sock
+      - ${ORCHIVIO_WORK_DIR}:${ORCHIVIO_WORK_DIR}
+    security_opt: ["label=disable"] # socket access under SELinux in the podman VM
+    depends_on: [orchestrator, proxy]
+
+networks:
+  sandbox:
+    name: orchivio-sandbox
+    internal: true
+  egress:
+    name: orchivio-egress
 
 volumes:
   orchivio-pgdata:

@@ -1,6 +1,6 @@
 # Lokaler Ende-zu-Ende-Test
 
-Diese Anleitung startet Orchivio komplett auf deinem Rechner (Server, Worker, Linear- und GitHub-Adapter, Postgres, Proxy) und prüft es gegen echtes Linear, echtes GitHub und echtes Claude.
+Diese Anleitung startet Orchivio komplett auf deinem Rechner (Server, Worker, Linear- und GitHub-Adapter, Postgres, Proxy) und prüft es gegen echtes Linear, echtes GitHub und echtes Claude. Alle Dienste laufen als Container aus den veröffentlichten Images unter `ghcr.io/orchivio/*`; lokal wird nichts gebaut.
 
 Ohne externe Dienste läuft der automatische Rauchtest:
 
@@ -12,8 +12,8 @@ go test -tags e2e ./internal/e2e/
 
 ## Voraussetzungen
 
-- Go 1.26
-- Podman, die Podman-Machine läuft (`podman machine start`)
+- Podman mit `podman compose`, die Podman-Machine läuft (`podman machine start`)
+- Go 1.26 nur für die Tests
 - `gh` (GitHub CLI) optional, nützlich zum Prüfen der Pull Requests
 - Ein Test-Repo, z. B. `soemii/orchivio-playground`, mit mindestens einem Commit auf `main`
 
@@ -65,17 +65,25 @@ Alternative ohne OAuth-App: eigener Nutzer „Orchivio“ (zweiter Account, kost
 ## Starten und Stoppen
 
 ```sh
-dev/run-all.sh   # Postgres, Proxy, Build, alle Prozesse im Hintergrund
-dev/stop-all.sh  # beendet die Prozesse und den Proxy-Container
+dev/run-all.sh                         # zieht die Images (Tag main) und startet alles
+ORCHIVIO_VERSION=1.2.0 dev/run-all.sh  # eine veröffentlichte Version
+dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im Volume
 ```
 
-Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 5432, 7070, 7101, 7102, 7201 und 8088 müssen frei sein. Alle außer dem Webhook (`:7102`) lauschen nur auf `127.0.0.1`: gRPC läuft unverschlüsselt und ohne Authentifizierung. Ein Worker auf einem anderen Rechner braucht eine explizite Adresse (`ORCHIVIO_GRPC_ADDR`) und vorher mTLS. Ein zweiter Start bricht ab, solange Prozesse des ersten laufen; dann zuerst `dev/stop-all.sh` ausführen.
+`run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur die Timeline (`127.0.0.1:8088`) ist vom Rechner aus erreichbar; gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
 
-`run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten) und wartet bis zu 30 Sekunden, bis der Server antwortet. Postgres bleibt nach dem Stoppen laufen (`podman compose -f dev/compose.yaml down` beendet es).
+## Bauen und Veröffentlichen
+
+Jedes Repo baut in GitHub Actions (`.github/workflows/ci.yml`), trunk-based:
+
+- Pull Request: Format, `go vet`, Tests (im Orchestrator auch der Ende-zu-Ende-Test).
+- Push auf `main`: zusätzlich Images für amd64 und arm64 nach `ghcr.io/orchivio/<repo>` mit den Tags `main` und `sha-<commit>`.
+- Tag `vX.Y.Z`: Images `X.Y.Z`, `X.Y` und `latest`.
+- Contract: Tag `contract/vX.Y.Z` im Orchestrator-Repo veröffentlicht das Go-Modul `github.com/orchivio/orchestrator/contract`; Dependabot schlägt das Update in den anderen Repos vor. Lokal überschreibt `go.work` die Version, so dass Änderungen am Contract sofort überall greifen.
 
 ## Logs und Timelines
 
-- Logs: `dev/logs/<name>.log` (`server`, `worker`, `linear-adapter`, `github-adapter`), PIDs in `dev/logs/pids`.
+- Logs: `podman compose -f dev/compose.yaml logs -f [orchestrator|worker|adapter-linear|adapter-github|proxy]`.
 - Timeline eines Runs als JSON: `http://localhost:8088/runs/<run-id>`. Der Link steht in jedem Meilenstein-Kommentar im Ticket.
 
 ## Manuelle Checkliste
@@ -92,4 +100,4 @@ Der erste Start baut die Sandbox-Images und dauert einige Minuten. Die Ports 543
 - Keine Kommentare im PR-Review.
 - Kein Resume und keine Snapshots: Jede Antwort startet einen neuen Lauf.
 - Nur Polling, keine Webhooks.
-- Die Linear-GraphQL-Formen sind nicht gegen die Live-API verifiziert. Passiert nichts, zuerst `dev/logs/linear-adapter.log` auf GraphQL-Fehler prüfen.
+- Die Linear-GraphQL-Formen sind nicht gegen die Live-API verifiziert. Passiert nichts, zuerst die Logs von `adapter-linear` auf GraphQL-Fehler prüfen.
