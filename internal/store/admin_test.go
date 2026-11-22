@@ -212,3 +212,44 @@ func TestProjectSpecStoredKeys(t *testing.T) {
 		t.Fatalf("stored spec = %s", raw)
 	}
 }
+
+func TestTokenLifecycle(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	before, err := s.CountTokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := []byte(uuid.NewString())
+	tok := admin.Token{ID: uuid.New(), Name: "ci", Prefix: "orv_abcdefgh", Scope: admin.ScopeInstance, Role: admin.RoleAdmin,
+		CreatedAt: base, ExpiresAt: base.Add(time.Hour)}
+	if _, err := s.CreateToken(ctx, tok, hash); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TokenByHash(ctx, hash)
+	if err != nil || got.ID != tok.ID || got.RevokedAt != nil || !got.ExpiresAt.Equal(tok.ExpiresAt) {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+	if err := s.RevokeToken(ctx, tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.TokenByHash(ctx, hash); got.RevokedAt == nil {
+		t.Fatal("not revoked")
+	}
+	if n, _ := s.CountTokens(ctx); n != before+1 {
+		t.Fatalf("revoked token must still count: %d vs %d", n, before)
+	}
+	list, _ := s.ListTokens(ctx)
+	if len(list) != before+1 || list[0].ID != tok.ID {
+		t.Fatalf("newest first expected, got %d rows", len(list))
+	}
+}
+
+func TestTokenNotFound(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	if _, err := s.TokenByHash(ctx, []byte("nope")); !errors.Is(err, admin.ErrNotFound) {
+		t.Fatalf("by hash: %v", err)
+	}
+	if err := s.RevokeToken(ctx, uuid.New()); !errors.Is(err, admin.ErrNotFound) {
+		t.Fatalf("revoke: %v", err)
+	}
+}

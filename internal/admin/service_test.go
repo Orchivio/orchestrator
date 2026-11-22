@@ -27,11 +27,13 @@ type memStore struct {
 	projects map[uuid.UUID]admin.Project
 	keys     map[string]bool // adapter/key ever used
 	adapter  map[uuid.UUID]string
+	tokens   []admin.Token // insertion order
+	hashes   map[string]uuid.UUID
 }
 
 func newMemStore() *memStore {
 	return &memStore{tenants: map[string]admin.Tenant{}, deleted: map[string]bool{}, profiles: map[uuid.UUID]admin.Profile{},
-		projects: map[uuid.UUID]admin.Project{}, keys: map[string]bool{}, adapter: map[uuid.UUID]string{}}
+		projects: map[uuid.UUID]admin.Project{}, keys: map[string]bool{}, adapter: map[uuid.UUID]string{}, hashes: map[string]uuid.UUID{}}
 }
 
 func (m *memStore) ListTenants(context.Context) ([]admin.Tenant, error) {
@@ -328,4 +330,57 @@ func TestWriteTriggersOnChange(t *testing.T) {
 	if _, err := svc.CreateTenant(ctx, admin.Tenant{Slug: "!", TrackerAdapter: "linear", CodeHostAdapter: "github"}); err == nil || calls != 1 {
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}
+}
+
+func (m *memStore) CreateToken(_ context.Context, t admin.Token, hash []byte) (admin.Token, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, dup := m.hashes[string(hash)]; dup {
+		return admin.Token{}, admin.ErrTaken
+	}
+	m.hashes[string(hash)] = t.ID
+	m.tokens = append(m.tokens, t)
+	return t, nil
+}
+
+func (m *memStore) ListTokens(context.Context) ([]admin.Token, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := slices.Clone(m.tokens)
+	slices.Reverse(out)
+	return out, nil
+}
+
+func (m *memStore) RevokeToken(_ context.Context, id uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.tokens {
+		if m.tokens[i].ID == id {
+			now := time.Now()
+			m.tokens[i].RevokedAt = &now
+			return nil
+		}
+	}
+	return admin.ErrNotFound
+}
+
+func (m *memStore) TokenByHash(_ context.Context, hash []byte) (admin.Token, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id, ok := m.hashes[string(hash)]
+	if !ok {
+		return admin.Token{}, admin.ErrNotFound
+	}
+	for _, t := range m.tokens {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	return admin.Token{}, admin.ErrNotFound
+}
+
+func (m *memStore) CountTokens(context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.tokens), nil
 }

@@ -134,3 +134,19 @@ RETURNING *;
 -- name: DeleteProject :execrows
 UPDATE projects SET deleted_at = $3, updated_at = $3, version = version + 1
 WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND (sqlc.arg(if_version)::bigint = 0 OR version = sqlc.arg(if_version));
+
+-- name: CreateToken :one
+INSERT INTO tokens (id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;
+
+-- name: ListTokens :many
+SELECT * FROM tokens ORDER BY created_at DESC, id;
+
+-- name: RevokeToken :execrows
+UPDATE tokens SET revoked_at = coalesce(revoked_at, $2) WHERE id = $1;
+
+-- name: TokenByHash :one
+SELECT * FROM tokens WHERE hash = $1;
+
+-- name: CountTokens :one
+SELECT count(*) FROM tokens;

@@ -60,6 +60,23 @@ func (e *ValidationError) Error() string {
 	return "validation failed: " + strings.Join(parts, "; ")
 }
 
+const (
+	TokenPrefix     = "orv_"
+	ScopeInstance   = "instance"
+	RoleAdmin       = "admin"
+	DefaultTokenTTL = 90 * 24 * time.Hour
+)
+
+// Token is an API token as stored; the plaintext exists only at issue time.
+type Token struct {
+	ID                                    uuid.UUID
+	Name, Prefix, Scope, TenantSlug, Role string
+	CreatedAt, ExpiresAt                  time.Time
+	RevokedAt                             *time.Time
+}
+
+var ErrUnauthorized = errors.New("unauthorized")
+
 // Store persists the admin domain. ifVersion 0 = no precondition. Deletes are
 // soft; lists exclude deleted rows.
 type Store interface {
@@ -78,4 +95,9 @@ type Store interface {
 	CreateProject(ctx context.Context, p Project, trackerAdapter string) (Project, error) // ErrTaken: (adapter, key) ever used
 	UpdateProject(ctx context.Context, p Project, ifVersion int64) (Project, error)
 	DeleteProject(ctx context.Context, tenant string, id uuid.UUID, ifVersion int64) error // ErrInUse if unfinished runs
+	CreateToken(ctx context.Context, t Token, hash []byte) (Token, error)
+	ListTokens(ctx context.Context) ([]Token, error)             // includes revoked, newest first
+	RevokeToken(ctx context.Context, id uuid.UUID) error         // ErrNotFound
+	TokenByHash(ctx context.Context, hash []byte) (Token, error) // ErrNotFound
+	CountTokens(ctx context.Context) (int, error)                // all rows, revoked/expired included
 }

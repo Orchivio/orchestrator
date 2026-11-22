@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/orchivio/orchestrator/internal/admin"
 	"github.com/orchivio/orchestrator/internal/config"
 	"github.com/orchivio/orchestrator/internal/store/db"
@@ -256,4 +257,56 @@ func toProject(p db.Project) (admin.Project, error) {
 		ProfileID: p.ProfileID, Repos: spec.Repos, Classifier: spec.Classifier, Roles: spec.Roles,
 		MaxDiffLines: spec.MaxDiffLines, Milestones: spec.Milestones,
 		Version: p.Version, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC()}, nil
+}
+
+func (s *Store) CreateToken(ctx context.Context, t admin.Token, hash []byte) (admin.Token, error) {
+	row, err := s.q.CreateToken(ctx, db.CreateTokenParams{ID: t.ID, Name: t.Name, Prefix: t.Prefix, Hash: hash,
+		Scope: t.Scope, TenantSlug: pgtype.Text{String: t.TenantSlug, Valid: t.TenantSlug != ""}, Role: t.Role, CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt})
+	if err != nil {
+		return admin.Token{}, mapWriteErr("token "+t.ID.String(), err)
+	}
+	return toToken(row), nil
+}
+
+func (s *Store) ListTokens(ctx context.Context) ([]admin.Token, error) {
+	rows, err := s.q.ListTokens(ctx)
+	return mapRows(rows, err, toToken)
+}
+
+func (s *Store) RevokeToken(ctx context.Context, id uuid.UUID) error {
+	n, err := s.q.RevokeToken(ctx, db.RevokeTokenParams{ID: id, RevokedAt: ptr(s.now())})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("token %s: %w", id, admin.ErrNotFound)
+	}
+	return nil
+}
+
+func (s *Store) TokenByHash(ctx context.Context, hash []byte) (admin.Token, error) {
+	row, err := s.q.TokenByHash(ctx, hash)
+	if err != nil {
+		return admin.Token{}, mapNoRows("token", "by hash", err)
+	}
+	return toToken(row), nil
+}
+
+func (s *Store) CountTokens(ctx context.Context) (int, error) {
+	n, err := s.q.CountTokens(ctx)
+	return int(n), err
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func toToken(t db.Token) admin.Token {
+	tok := admin.Token{ID: t.ID, Name: t.Name, Prefix: t.Prefix, Scope: t.Scope, Role: t.Role,
+		CreatedAt: t.CreatedAt.UTC(), ExpiresAt: t.ExpiresAt.UTC()}
+	if t.TenantSlug.Valid {
+		tok.TenantSlug = t.TenantSlug.String
+	}
+	if t.RevokedAt != nil {
+		tok.RevokedAt = ptr(t.RevokedAt.UTC())
+	}
+	return tok
 }

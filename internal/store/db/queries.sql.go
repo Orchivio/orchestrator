@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const activeRun = `-- name: ActiveRun :one
@@ -120,6 +121,17 @@ SELECT count(*) FROM projects WHERE profile_id = $1 AND deleted_at IS NULL
 
 func (q *Queries) CountLiveProjectsOfProfile(ctx context.Context, profileID uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countLiveProjectsOfProfile, profileID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTokens = `-- name: CountTokens :one
+SELECT count(*) FROM tokens
+`
+
+func (q *Queries) CountTokens(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTokens)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -346,6 +358,51 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createToken = `-- name: CreateToken :one
+INSERT INTO tokens (id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at
+`
+
+type CreateTokenParams struct {
+	ID         uuid.UUID
+	Name       string
+	Prefix     string
+	Hash       []byte
+	Scope      string
+	TenantSlug pgtype.Text
+	Role       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
+func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token, error) {
+	row := q.db.QueryRow(ctx, createToken,
+		arg.ID,
+		arg.Name,
+		arg.Prefix,
+		arg.Hash,
+		arg.Scope,
+		arg.TenantSlug,
+		arg.Role,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	var i Token
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Prefix,
+		&i.Hash,
+		&i.Scope,
+		&i.TenantSlug,
+		&i.Role,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
 	)
 	return i, err
 }
@@ -850,6 +907,41 @@ func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
 	return items, nil
 }
 
+const listTokens = `-- name: ListTokens :many
+SELECT id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at FROM tokens ORDER BY created_at DESC, id
+`
+
+func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
+	rows, err := q.db.Query(ctx, listTokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Token
+	for rows.Next() {
+		var i Token
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Prefix,
+			&i.Hash,
+			&i.Scope,
+			&i.TenantSlug,
+			&i.Role,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markInbound = `-- name: MarkInbound :execrows
 INSERT INTO inbound_events (source, external_id, received_at)
 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
@@ -902,6 +994,45 @@ func (q *Queries) OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeToken = `-- name: RevokeToken :execrows
+UPDATE tokens SET revoked_at = coalesce(revoked_at, $2) WHERE id = $1
+`
+
+type RevokeTokenParams struct {
+	ID        uuid.UUID
+	RevokedAt *time.Time
+}
+
+func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeToken, arg.ID, arg.RevokedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const tokenByHash = `-- name: TokenByHash :one
+SELECT id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at FROM tokens WHERE hash = $1
+`
+
+func (q *Queries) TokenByHash(ctx context.Context, hash []byte) (Token, error) {
+	row := q.db.QueryRow(ctx, tokenByHash, hash)
+	var i Token
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Prefix,
+		&i.Hash,
+		&i.Scope,
+		&i.TenantSlug,
+		&i.Role,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
 const updateProfile = `-- name: UpdateProfile :one

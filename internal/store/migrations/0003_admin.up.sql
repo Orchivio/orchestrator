@@ -40,3 +40,16 @@ CREATE TABLE projects (
 );
 
 ALTER TABLE runs ADD COLUMN project_id uuid;
+
+CREATE TABLE tokens (
+    id          uuid        PRIMARY KEY,
+    name        text        NOT NULL,
+    prefix      text        NOT NULL,
+    hash        bytea       NOT NULL UNIQUE, -- SHA-256 of the plaintext; the plaintext is never stored
+    scope       text        NOT NULL,
+    tenant_slug text        REFERENCES tenants (slug),
+    role        text        NOT NULL,
+    created_at  timestamptz NOT NULL,
+    expires_at  timestamptz NOT NULL,
+    revoked_at  timestamptz
+);

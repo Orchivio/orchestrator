@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Conversation struct {
@@ -103,4 +104,17 @@ type Tenant struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DeletedAt       *time.Time
+}
+
+type Token struct {
+	ID         uuid.UUID
+	Name       string
+	Prefix     string
+	Hash       []byte
+	Scope      string
+	TenantSlug pgtype.Text
+	Role       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	RevokedAt  *time.Time
 }
