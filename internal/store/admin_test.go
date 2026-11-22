@@ -133,6 +133,29 @@ func TestDeleteProjectBlockedByUnfinishedRun(t *testing.T) {
 	}
 }
 
+func TestDeleteTenantBlockedByUnfinishedRun(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	p := createProject(t, s)
+	c := router.Conversation{ID: uuid.New(), Tenant: p.TenantSlug, Project: p.TrackerKey, TicketRef: "K-1", CreatedAt: base}
+	if err := s.CreateConversation(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	run := newRun(t, s, c, "running", base)
+	if err := s.DeleteTenant(ctx, p.TenantSlug, 0); !errors.Is(err, admin.ErrInUse) {
+		t.Fatalf("err = %v", err)
+	}
+	run.State = "succeeded"
+	if err := s.UpdateRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteTenant(ctx, p.TenantSlug, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetTenant(ctx, p.TenantSlug); !errors.Is(err, admin.ErrNotFound) {
+		t.Fatalf("get err = %v", err)
+	}
+}
+
 func TestDeleteProfileInUse(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
 	p := createProject(t, s)
