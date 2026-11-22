@@ -193,3 +193,17 @@ func TestEveryRouteRequiresAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestMinimalProjectReturnsEmptyCollectionsNotNull(t *testing.T) {
+	e := newEnv(t)
+	pid := e.seedTenantAndProfile()
+	body := `{"name":"P","trackerKey":"ACME","profileId":"` + pid + `","repos":[{"slug":"o/x","baseBranch":"main"}],"classifier":{"defaultRepo":"o/x"}}`
+	rec := e.do("POST", "/api/v1/tenants/acme/projects", body)
+	got := e.do("GET", rec.Header().Get("Location"), "").Body.String()
+	for _, want := range []string{`"taskLabels":[]`, `"questionLabels":[]`, `"repoLabels":{}`, `"allowedPaths":[]`,
+		`"users":[]`, `"questions":[]`, `"tasks":[]`, `"milestones":[]`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %s in %s", want, got)
+		}
+	}
+}

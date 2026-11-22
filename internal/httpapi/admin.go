@@ -133,12 +133,34 @@ func profileOut(p admin.Profile) profileDTO {
 }
 
 func projectOut(p admin.Project) projectDTO {
-	return projectDTO{p.ID.String(), p.Name, p.TrackerKey, p.ProfileID.String(), nonNil(p.Repos), p.Classifier, p.Roles,
+	return projectDTO{p.ID.String(), p.Name, p.TrackerKey, p.ProfileID.String(), reposOut(p.Repos), classifierOut(p.Classifier), rolesOut(p.Roles),
 		p.MaxDiffLines, nonNil(p.Milestones), p.Version, p.CreatedAt, p.UpdatedAt}
 }
 
 func tokenOut(t admin.Token) tokenDTO {
 	return tokenDTO{t.ID.String(), t.Name, t.Prefix, t.Scope, t.Role, t.CreatedAt, t.ExpiresAt, t.RevokedAt}
+}
+
+func reposOut(repos []config.Repo) []config.Repo {
+	out := make([]config.Repo, len(repos))
+	for i, r := range repos {
+		r.AllowedPaths, r.Users = nonNil(r.AllowedPaths), nonNil(r.Users)
+		out[i] = r
+	}
+	return out
+}
+
+func classifierOut(c config.ClassifierRules) config.ClassifierRules {
+	c.TaskLabels, c.QuestionLabels = nonNil(c.TaskLabels), nonNil(c.QuestionLabels)
+	if c.RepoLabels == nil {
+		c.RepoLabels = map[string]string{}
+	}
+	return c
+}
+
+func rolesOut(r config.Roles) config.Roles {
+	r.Questions, r.Tasks = nonNil(r.Questions), nonNil(r.Tasks)
+	return r
 }
 
 func nonNil[T any](s []T) []T {
