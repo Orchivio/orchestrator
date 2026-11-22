@@ -53,23 +53,23 @@ type Project struct {
 // Repo.AllowedPaths are path prefixes ("" = everything). Users empty = all
 // users with the project role.
 type Repo struct {
-	Slug         string
-	BaseBranch   string
-	AllowedPaths []string
-	Users        []string
+	Slug         string   `json:"slug"`
+	BaseBranch   string   `json:"baseBranch"`
+	AllowedPaths []string `json:"allowedPaths"`
+	Users        []string `json:"users"`
 }
 
 type ClassifierRules struct {
-	TaskLabels     []string
-	QuestionLabels []string
-	RepoLabels     map[string]string
-	DefaultRepo    string
+	TaskLabels     []string          `json:"taskLabels"`
+	QuestionLabels []string          `json:"questionLabels"`
+	RepoLabels     map[string]string `json:"repoLabels"`
+	DefaultRepo    string            `json:"defaultRepo"`
 }
 
 // Roles lists e-mail addresses.
 type Roles struct {
-	Questions []string
-	Tasks     []string
+	Questions []string `json:"questions"`
+	Tasks     []string `json:"tasks"`
 }
 
 // ProjectFor finds the project of a tenant by its tracker key.

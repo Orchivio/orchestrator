@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -177,5 +178,37 @@ func TestRunStoresProjectID(t *testing.T) {
 	got, err = s.GetRun(ctx, r.ID)
 	if err != nil || got.ProjectID != r.ProjectID {
 		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+// Pins the stored jsonb format: renaming a Go field must not silently drop data.
+func TestProjectSpecStoredKeys(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	tn := newTenant(t, s)
+	in := projectIn(tn.Slug, newProfile(t, s, tn.Slug).ID, "K-"+uuid.NewString())
+	in.Repos = []config.Repo{{Slug: "a/b", BaseBranch: "main", AllowedPaths: []string{""}, Users: []string{"u@x.de"}}}
+	in.Classifier = config.ClassifierRules{TaskLabels: []string{"t"}, QuestionLabels: []string{"q"},
+		RepoLabels: map[string]string{"repo:b": "a/b"}, DefaultRepo: "a/b"}
+	in.Roles = config.Roles{Questions: []string{"q@x.de"}, Tasks: []string{"t@x.de"}}
+	in.Milestones = []string{"started"}
+	if _, err := s.CreateProject(ctx, in, "linear"); err != nil {
+		t.Fatal(err)
+	}
+	var raw []byte
+	if err := s.pool.QueryRow(ctx, "SELECT spec FROM projects WHERE id = $1", in.ID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"repos":[{"slug":"a/b","baseBranch":"main","allowedPaths":[""],"users":["u@x.de"]}],
+		"classifier":{"taskLabels":["t"],"questionLabels":["q"],"repoLabels":{"repo:b":"a/b"},"defaultRepo":"a/b"},
+		"roles":{"questions":["q@x.de"],"tasks":["t@x.de"]},"maxDiffLines":500,"milestones":["started"]}`
+	var got, wantDoc map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(want), &wantDoc); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, wantDoc) {
+		t.Fatalf("stored spec = %s", raw)
 	}
 }
