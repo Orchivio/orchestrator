@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -18,19 +19,23 @@ func RequireInstanceAdmin(svc *admin.Service, next http.Handler) http.Handler {
 		header := r.Header.Get("Authorization")
 		if strings.HasPrefix(header, bearerPrefix) {
 			tok, err := svc.Authenticate(r.Context(), strings.TrimSpace(header[len(bearerPrefix):]))
-			if err == nil && tok.Scope == admin.ScopeInstance && tok.Role == admin.RoleAdmin {
+			switch {
+			case err == nil && tok.Scope == admin.ScopeInstance && tok.Role == admin.RoleAdmin:
 				next.ServeHTTP(w, r)
+				return
+			case err != nil && !errors.Is(err, admin.ErrUnauthorized):
+				svc.Logger().Error("token lookup failed", "err", err)
+				writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "The request could not be processed.")
 				return
 			}
 		}
-		writeUnauthorized(w)
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeProblem(w, http.StatusUnauthorized, "Unauthorized", "A valid bearer token is required.")
 	})
 }
 
-func writeUnauthorized(w http.ResponseWriter) {
+func writeProblem(w http.ResponseWriter, status int, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
-	w.Header().Set("WWW-Authenticate", "Bearer")
-	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "about:blank", "title": "Unauthorized",
-		"status": http.StatusUnauthorized, "detail": "A valid bearer token is required."})
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "about:blank", "title": title, "status": status, "detail": detail})
 }

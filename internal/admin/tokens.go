@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -83,6 +84,9 @@ func (s *Service) Bootstrap(ctx context.Context, plaintext string) (bool, error)
 	}
 	return true, nil
 }
+
+// Logger returns the service logger, for middleware that reports infrastructure failures.
+func (s *Service) Logger() *slog.Logger { return s.log }
 
 func (s *Service) ListTokens(ctx context.Context) ([]Token, error) { return s.store.ListTokens(ctx) }
 
