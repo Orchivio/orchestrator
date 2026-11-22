@@ -24,9 +24,10 @@ type Sync struct {
 	log      *slog.Logger
 	updates  chan struct{}
 
-	mu      sync.RWMutex
-	current *Config
-	lastErr error
+	reloadMu sync.Mutex // serializes Load+swap so an older load never overwrites a newer one
+	mu       sync.RWMutex
+	current  *Config
+	lastErr  error
 }
 
 // NewSync performs the initial load, which must succeed. An empty config is valid.
@@ -76,6 +77,8 @@ func (s *Sync) Run(ctx context.Context) {
 
 // Reload loads now. On error the previous config stays and the error is returned.
 func (s *Sync) Reload(ctx context.Context) error {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
 	cfg, err := s.src.Load(ctx)
 	s.mu.Lock()
 	s.lastErr = err
