@@ -1,0 +1,331 @@
+openapi: 3.1.0
+info:
+  title: Orchivio Admin API
+  version: 1.0.0
+  description: >
+    Runtime administration of tenants, profiles, projects and API tokens.
+    Every single-resource response carries ETag "<version>"; PUT and DELETE
+    honour If-Match "<version>" (absent means last writer wins).
+    Errors are RFC 9457 problem details.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /tenants:
+    get:
+      summary: List tenants
+      operationId: listTenants
+      responses:
+        "200": {description: Tenants, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Tenant"}}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      summary: Create a tenant
+      operationId: createTenant
+      requestBody: {$ref: "#/components/requestBodies/Tenant"}
+      responses:
+        "201": {$ref: "#/components/responses/TenantCreated"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/Invalid"}
+  /tenants/{slug}:
+    parameters: [{$ref: "#/components/parameters/Slug"}]
+    get:
+      summary: Get a tenant
+      operationId: getTenant
+      responses:
+        "200": {$ref: "#/components/responses/TenantOK"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      summary: Replace a tenant
+      operationId: putTenant
+      parameters: [{$ref: "#/components/parameters/IfMatch"}]
+      requestBody: {$ref: "#/components/requestBodies/Tenant"}
+      responses:
+        "200": {$ref: "#/components/responses/TenantOK"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+        "422": {$ref: "#/components/responses/Invalid"}
+    delete:
+      summary: Delete a tenant (soft)
+      operationId: deleteTenant
+      parameters: [{$ref: "#/components/parameters/IfMatch"}]
+      responses:
+        "204": {description: Deleted}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+  /tenants/{slug}/profiles:
+    parameters: [{$ref: "#/components/parameters/Slug"}]
+    get:
+      summary: List profiles of a tenant
+      operationId: listProfiles
+      responses:
+        "200": {description: Profiles, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Profile"}}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      summary: Create a profile
+      operationId: createProfile
+      requestBody: {$ref: "#/components/requestBodies/Profile"}
+      responses:
+        "201": {$ref: "#/components/responses/ProfileCreated"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Invalid"}
+  /tenants/{slug}/profiles/{id}:
+    parameters: [{$ref: "#/components/parameters/Slug"}, {$ref: "#/components/parameters/Id"}]
+    get:
+      summary: Get a profile
+      operationId: getProfile
+      responses:
+        "200": {$ref: "#/components/responses/ProfileOK"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      summary: Replace a profile
+      operationId: putProfile
+      parameters: [{$ref: "#/components/parameters/IfMatch"}]
+      requestBody: {$ref: "#/components/requestBodies/Profile"}
+      responses:
+        "200": {$ref: "#/components/responses/ProfileOK"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+        "422": {$ref: "#/components/responses/Invalid"}
+    delete:
+      summary: Delete a profile (soft; 409 while a project uses it)
+      operationId: deleteProfile
+      parameters: [{$ref: "#/components/parameters/IfMatch"}]
+      responses:
+        "204": {description: Deleted}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+  /tenants/{slug}/projects:
+    parameters: [{$ref: "#/components/parameters/Slug"}]
+    get:
+      summary: List projects of a tenant
+      operationId: listProjects
+      responses:
+        "200": {description: Projects, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Project"}}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      summary: Create a project
+      operationId: createProject
+      requestBody: {$ref: "#/components/requestBodies/Project"}
+      responses:
+        "201": {$ref: "#/components/responses/ProjectCreated"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Invalid"}
+  /tenants/{slug}/projects/{id}:
+    parameters: [{$ref: "#/components/parameters/Slug"}, {$ref: "#/components/parameters/Id"}]
+    get:
+      summary: Get a project
+      operationId: getProject
+      responses:
+        "200": {$ref: "#/components/responses/ProjectOK"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      summary: Replace a project
+      operationId: putProject
+      parameters: [{$ref: "#/components/parameters/IfMatch"}]
+      requestBody: {$ref: "#/components/requestBodies/Project"}
+      responses:
+        "200": {$ref: "#/components/responses/ProjectOK"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+        "422": {$ref: "#/components/responses/Invalid"}
+    delete:
+      summary: Delete a project (soft; 409 while runs are unfinished)
+      operationId: deleteProject
+      parameters: [{$ref: "#/components/parameters/IfMatch"}]
+      responses:
+        "204": {description: Deleted}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+  /tokens:
+    get:
+      summary: List API tokens (never includes plaintext)
+      operationId: listTokens
+      responses:
+        "200": {description: Tokens, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Token"}}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      summary: Issue an instance admin token; the plaintext is shown only in this response
+      operationId: createToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string}
+                expiresIn: {type: string, examples: ["720h"], description: Go duration; default 90 days}
+      responses:
+        "201": {description: Token issued, content: {application/json: {schema: {$ref: "#/components/schemas/TokenCreated"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/Invalid"}
+  /tokens/{id}:
+    parameters: [{$ref: "#/components/parameters/Id"}]
+    delete:
+      summary: Revoke a token
+      operationId: revokeToken
+      responses:
+        "204": {description: Revoked}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    Slug: {name: slug, in: path, required: true, schema: {type: string}}
+    Id: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      schema: {type: string, examples: ['"3"']}
+      description: Expected version; mismatch yields 412, absent means last writer wins.
+  headers:
+    ETag: {schema: {type: string, examples: ['"1"']}}
+  requestBodies:
+    Tenant: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Tenant"}}}}
+    Profile: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Profile"}}}}
+    Project: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
+  responses:
+    TenantOK: {description: Tenant, headers: {ETag: {$ref: "#/components/headers/ETag"}}, content: {application/json: {schema: {$ref: "#/components/schemas/Tenant"}}}}
+    TenantCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Tenant"}}}}
+    ProfileOK: {description: Profile, headers: {ETag: {$ref: "#/components/headers/ETag"}}, content: {application/json: {schema: {$ref: "#/components/schemas/Profile"}}}}
+    ProfileCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Profile"}}}}
+    ProjectOK: {description: Project, headers: {ETag: {$ref: "#/components/headers/ETag"}}, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
+    ProjectCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
+    BadRequest: {description: Malformed JSON, unknown field or bad If-Match, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Unauthorized: {description: Missing, invalid, expired or revoked token, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    NotFound: {description: Resource does not exist, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Conflict: {description: Resource still in use, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    PreconditionFailed: {description: If-Match version is stale, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Invalid: {description: Validation failed, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ValidationProblem"}}}}
+  schemas:
+    Tenant:
+      type: object
+      additionalProperties: false
+      required: [slug, displayName, trackerAdapter, codeHostAdapter]
+      properties:
+        slug: {type: string, description: Ignored on PUT; the path wins}
+        displayName: {type: string}
+        trackerAdapter: {type: string, description: Immutable}
+        codeHostAdapter: {type: string}
+        version: {type: integer, format: int64, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
+        updatedAt: {type: string, format: date-time, readOnly: true}
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [name, runtime, maxDuration]
+      properties:
+        id: {type: string, format: uuid, readOnly: true}
+        name: {type: string}
+        runtime: {type: string}
+        model: {type: string}
+        instructions: {type: string}
+        maxDuration: {type: string, examples: ["20m"], description: Go duration}
+        version: {type: integer, format: int64, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
+        updatedAt: {type: string, format: date-time, readOnly: true}
+    Repo:
+      type: object
+      additionalProperties: false
+      properties:
+        slug: {type: string, examples: [owner/name]}
+        baseBranch: {type: string}
+        allowedPaths: {type: array, items: {type: string}, description: Path prefixes; empty string allows everything}
+        users: {type: array, items: {type: string}}
+    ClassifierRules:
+      type: object
+      additionalProperties: false
+      properties:
+        taskLabels: {type: array, items: {type: string}}
+        questionLabels: {type: array, items: {type: string}}
+        repoLabels: {type: object, additionalProperties: {type: string}}
+        defaultRepo: {type: string}
+    Roles:
+      type: object
+      additionalProperties: false
+      properties:
+        questions: {type: array, items: {type: string}, description: E-mail addresses}
+        tasks: {type: array, items: {type: string}, description: E-mail addresses}
+    Project:
+      type: object
+      additionalProperties: false
+      required: [name, trackerKey, profileId]
+      properties:
+        id: {type: string, format: uuid, readOnly: true}
+        name: {type: string}
+        trackerKey: {type: string, description: Immutable}
+        profileId: {type: string, format: uuid}
+        repos: {type: array, items: {$ref: "#/components/schemas/Repo"}}
+        classifier: {$ref: "#/components/schemas/ClassifierRules"}
+        roles: {$ref: "#/components/schemas/Roles"}
+        maxDiffLines: {type: integer}
+        milestones: {type: array, items: {type: string}}
+        version: {type: integer, format: int64, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
+        updatedAt: {type: string, format: date-time, readOnly: true}
+    Token:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        prefix: {type: string}
+        scope: {type: string, enum: [instance]}
+        role: {type: string, enum: [admin]}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        revokedAt: {type: [string, "null"], format: date-time}
+    TokenCreated:
+      allOf:
+        - $ref: "#/components/schemas/Token"
+        - type: object
+          required: [token]
+          properties:
+            token: {type: string, description: Plaintext, returned only once}
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+    ValidationProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          required: [errors]
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: {type: string, examples: [classifier.defaultRepo]}
+                  message: {type: string}

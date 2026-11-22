@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -32,10 +31,4 @@ func RequireInstanceAdmin(svc *admin.Service, next http.Handler) http.Handler {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeProblem(w, http.StatusUnauthorized, "Unauthorized", "A valid bearer token is required.")
 	})
-}
-
-func writeProblem(w http.ResponseWriter, status int, title, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "about:blank", "title": title, "status": status, "detail": detail})
 }
