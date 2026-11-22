@@ -162,7 +162,7 @@ func (s *Store) CreateRun(ctx context.Context, r router.Run) error {
 		return err
 	}
 	return s.q.CreateRun(ctx, db.CreateRunParams{
-		ID: r.ID, TenantID: r.Tenant, ConversationID: r.ConversationID, Project: r.Project, TicketRef: r.TicketRef,
+		ID: r.ID, TenantID: r.Tenant, ConversationID: r.ConversationID, Project: r.Project, ProjectID: projectIDPtr(r.ProjectID), TicketRef: r.TicketRef,
 		Kind: r.Kind, State: r.State, Repos: repos, Branch: r.Branch, Prompt: r.Prompt, Result: r.Result,
 		PrUrls: prURLs, SessionID: r.SessionID, LeaseOwner: r.LeaseOwner, LeaseUntil: r.LeaseUntil,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt})
@@ -290,7 +290,7 @@ func toRun(r db.Run) (router.Run, error) {
 		return router.Run{}, fmt.Errorf("run %s pr_urls: %w", r.ID, err)
 	}
 	return router.Run{ID: r.ID, Tenant: r.TenantID, ConversationID: r.ConversationID, Project: r.Project,
-		TicketRef: r.TicketRef, Kind: r.Kind, State: r.State, Repos: repos, Branch: r.Branch,
+		ProjectID: deref(r.ProjectID), TicketRef: r.TicketRef, Kind: r.Kind, State: r.State, Repos: repos, Branch: r.Branch,
 		Prompt: r.Prompt, Result: r.Result, PRURLs: prURLs, SessionID: r.SessionID,
 		LeaseOwner: r.LeaseOwner, LeaseUntil: utcPtr(r.LeaseUntil), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}, nil
 }
@@ -309,4 +309,19 @@ func stringArray(raw []byte) ([]string, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// projectIDPtr maps uuid.Nil to NULL.
+func projectIDPtr(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
+func deref(id *uuid.UUID) uuid.UUID {
+	if id == nil {
+		return uuid.Nil
+	}
+	return *id
 }

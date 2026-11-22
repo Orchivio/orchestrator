@@ -165,6 +165,8 @@ func (f *fakeReporter) Notice(_ context.Context, _, _, text string) error {
 	return nil
 }
 
+var projectID = uuid.MustParse("11111111-2222-3333-4444-555555555555")
+
 type fixture struct {
 	r   *Router
 	s   *fakeStore
@@ -180,7 +182,7 @@ func newFixture(t *testing.T, defaultRepo string) *fixture {
 		CodeHost: config.AdapterRef{Name: "github", Address: "localhost:7201"},
 		Profiles: map[string]config.Profile{"default": {Runtime: "claude-code", Model: "m", MaxDuration: 20 * time.Minute}},
 		Projects: []config.Project{{
-			Name: "demo", TrackerKey: "ORC", Profile: "default",
+			ID: projectID, Name: "demo", TrackerKey: "ORC", Profile: "default",
 			Repos: []config.Repo{{Slug: "soemii/playground", BaseBranch: "main", AllowedPaths: []string{""}}},
 			Classifier: config.ClassifierRules{
 				TaskLabels:     []string{"orchivio:aufgabe"},
@@ -246,6 +248,14 @@ func TestHandleRejectsActorWithoutRole(t *testing.T) {
 	}
 	if len(f.s.convs) != 0 || len(f.s.runs) != 0 || len(f.s.inputs) != 0 {
 		t.Fatal("nothing must be stored")
+	}
+}
+
+func TestStartedRunCarriesProjectID(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	if got := f.s.runs[0].ProjectID; got != projectID {
+		t.Fatalf("ProjectID = %s, want %s", got, projectID)
 	}
 }
 

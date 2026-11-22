@@ -55,6 +55,7 @@ type Run struct {
 	Tenant         string
 	ConversationID uuid.UUID
 	Project        string
+	ProjectID      uuid.UUID // uuid.Nil = run predates managed projects
 	TicketRef      string
 	Kind           string
 	State          string

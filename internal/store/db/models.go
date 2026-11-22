@@ -45,6 +45,34 @@ type Input struct {
 	FromAgent      bool
 }
 
+type Profile struct {
+	ID                 uuid.UUID
+	TenantSlug         string
+	Name               string
+	Runtime            string
+	Model              string
+	Instructions       string
+	MaxDurationSeconds int64
+	Version            int64
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	DeletedAt          *time.Time
+}
+
+type Project struct {
+	ID             uuid.UUID
+	TenantSlug     string
+	TrackerAdapter string
+	TrackerKey     string
+	Name           string
+	ProfileID      uuid.UUID
+	Spec           []byte
+	Version        int64
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DeletedAt      *time.Time
+}
+
 type Run struct {
 	ID             uuid.UUID
 	TenantID       string
@@ -63,4 +91,16 @@ type Run struct {
 	LeaseUntil     *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	ProjectID      *uuid.UUID
+}
+
+type Tenant struct {
+	Slug            string
+	DisplayName     string
+	TrackerAdapter  string
+	CodeHostAdapter string
+	Version         int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       *time.Time
 }
