@@ -118,12 +118,24 @@ func (s *Service) DeleteTenant(ctx context.Context, slug string, ifVersion int64
 	return err
 }
 
+// requireTenant returns ErrNotFound unless the tenant exists and is not deleted.
+func (s *Service) requireTenant(ctx context.Context, slug string) error {
+	_, err := s.store.GetTenant(ctx, slug)
+	return err
+}
+
 // --- profiles ---
 
 func (s *Service) ListProfiles(ctx context.Context, tenant string) ([]Profile, error) {
+	if err := s.requireTenant(ctx, tenant); err != nil {
+		return nil, err
+	}
 	return s.store.ListProfiles(ctx, tenant)
 }
 func (s *Service) GetProfile(ctx context.Context, tenant string, id uuid.UUID) (Profile, error) {
+	if err := s.requireTenant(ctx, tenant); err != nil {
+		return Profile{}, err
+	}
 	return s.store.GetProfile(ctx, tenant, id)
 }
 
@@ -155,7 +167,7 @@ func (s *Service) CreateProfile(ctx context.Context, p Profile) (Profile, error)
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, p Profile, ifVersion int64) (Profile, error) {
-	cur, err := s.store.GetProfile(ctx, p.TenantSlug, p.ID)
+	cur, err := s.GetProfile(ctx, p.TenantSlug, p.ID)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -168,6 +180,9 @@ func (s *Service) UpdateProfile(ctx context.Context, p Profile, ifVersion int64)
 }
 
 func (s *Service) DeleteProfile(ctx context.Context, tenant string, id uuid.UUID, ifVersion int64) error {
+	if err := s.requireTenant(ctx, tenant); err != nil {
+		return err
+	}
 	_, err := finish(s, ctx, struct{}{}, s.store.DeleteProfile(ctx, tenant, id, ifVersion), "name")
 	return err
 }
@@ -175,9 +190,15 @@ func (s *Service) DeleteProfile(ctx context.Context, tenant string, id uuid.UUID
 // --- projects ---
 
 func (s *Service) ListProjects(ctx context.Context, tenant string) ([]Project, error) {
+	if err := s.requireTenant(ctx, tenant); err != nil {
+		return nil, err
+	}
 	return s.store.ListProjects(ctx, tenant)
 }
 func (s *Service) GetProject(ctx context.Context, tenant string, id uuid.UUID) (Project, error) {
+	if err := s.requireTenant(ctx, tenant); err != nil {
+		return Project{}, err
+	}
 	return s.store.GetProject(ctx, tenant, id)
 }
 
@@ -231,7 +252,7 @@ func (s *Service) CreateProject(ctx context.Context, p Project) (Project, error)
 }
 
 func (s *Service) UpdateProject(ctx context.Context, p Project, ifVersion int64) (Project, error) {
-	cur, err := s.store.GetProject(ctx, p.TenantSlug, p.ID)
+	cur, err := s.GetProject(ctx, p.TenantSlug, p.ID)
 	if err != nil {
 		return Project{}, err
 	}
@@ -251,6 +272,9 @@ func (s *Service) UpdateProject(ctx context.Context, p Project, ifVersion int64)
 }
 
 func (s *Service) DeleteProject(ctx context.Context, tenant string, id uuid.UUID, ifVersion int64) error {
+	if err := s.requireTenant(ctx, tenant); err != nil {
+		return err
+	}
 	_, err := finish(s, ctx, struct{}{}, s.store.DeleteProject(ctx, tenant, id, ifVersion), "trackerKey")
 	return err
 }

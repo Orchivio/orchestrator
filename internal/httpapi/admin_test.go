@@ -207,3 +207,21 @@ func TestMinimalProjectReturnsEmptyCollectionsNotNull(t *testing.T) {
 		}
 	}
 }
+
+func TestChildrenOfDeletedTenantAre404(t *testing.T) {
+	e := newEnv(t)
+	pid := e.seedTenantAndProfile()
+	loc := e.do("POST", "/api/v1/tenants/acme/projects", projectBody(pid, "o/x")).Header().Get("Location")
+	if rec := e.do("DELETE", "/api/v1/tenants/acme", ""); rec.Code != 204 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	for _, path := range []string{"/api/v1/tenants/acme/projects", "/api/v1/tenants/acme/profiles", loc,
+		"/api/v1/tenants/never/projects"} {
+		if rec := e.do("GET", path, ""); rec.Code != 404 {
+			t.Errorf("GET %s = %d", path, rec.Code)
+		}
+	}
+	if rec := e.do("PUT", loc, projectBody(pid, "o/x")); rec.Code != 404 {
+		t.Errorf("PUT = %d", rec.Code)
+	}
+}

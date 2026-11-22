@@ -384,3 +384,32 @@ func (m *memStore) CountTokens(context.Context) (int, error) {
 	defer m.mu.Unlock()
 	return len(m.tokens), nil
 }
+
+func TestChildrenOfMissingOrDeletedTenantAreNotFound(t *testing.T) {
+	svc := newTestService(t)
+	prof := seed(t, svc)
+	proj, err := svc.CreateProject(ctx, admin.Project{TenantSlug: "acme", Name: "Res", TrackerKey: "RES", ProfileID: prof.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteTenant(ctx, "acme", 0); err != nil {
+		t.Fatal(err)
+	}
+	calls := map[string]func(slug string) error{
+		"ListProfiles":  func(s string) error { _, err := svc.ListProfiles(ctx, s); return err },
+		"GetProfile":    func(s string) error { _, err := svc.GetProfile(ctx, s, prof.ID); return err },
+		"UpdateProfile": func(s string) error { _, err := svc.UpdateProfile(ctx, prof, 0); return err },
+		"DeleteProfile": func(s string) error { return svc.DeleteProfile(ctx, s, prof.ID, 0) },
+		"ListProjects":  func(s string) error { _, err := svc.ListProjects(ctx, s); return err },
+		"GetProject":    func(s string) error { _, err := svc.GetProject(ctx, s, proj.ID); return err },
+		"UpdateProject": func(s string) error { _, err := svc.UpdateProject(ctx, proj, 0); return err },
+		"DeleteProject": func(s string) error { return svc.DeleteProject(ctx, s, proj.ID, 0) },
+	}
+	for name, call := range calls {
+		for _, slug := range []string{"acme", "never-existed"} {
+			if err := call(slug); !errors.Is(err, admin.ErrNotFound) {
+				t.Errorf("%s(%s) = %v, want ErrNotFound", name, slug, err)
+			}
+		}
+	}
+}
