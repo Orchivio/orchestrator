@@ -51,7 +51,7 @@ func run(ctx context.Context, cfg *config.Sync, reg *Registry,
 			}
 			sctx, cancel := context.WithCancel(ctx)
 			streams[tenant] = tenantStream{keys: keys, cancel: cancel}
-			wg.Go(func() { ingestTenant(sctx, reg, tenant, keys, handle, log, initial, limit) })
+			wg.Go(func() { ingestTenant(ctx, sctx, reg, tenant, keys, handle, log, initial, limit) })
 		}
 	}
 	apply()
@@ -78,12 +78,14 @@ func projectKeys(c *config.Config) map[string][]string {
 	return out
 }
 
-func ingestTenant(ctx context.Context, reg *Registry, tenant string, keys []string,
+// ingestTenant reconnects until ctx (the stream's) ends. Events are handled
+// with runCtx, so a key change that cancels ctx never aborts a half-handled event.
+func ingestTenant(runCtx, ctx context.Context, reg *Registry, tenant string, keys []string,
 	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger,
 	initial, limit time.Duration) {
 	backoff := initial
 	for ctx.Err() == nil {
-		received, err := streamOnce(ctx, reg, tenant, keys, handle, log)
+		received, err := streamOnce(runCtx, ctx, reg, tenant, keys, handle, log)
 		if received {
 			backoff = initial
 		}
@@ -102,7 +104,7 @@ func ingestTenant(ctx context.Context, reg *Registry, tenant string, keys []stri
 
 // streamOnce reads one stream until it ends; received reports whether any
 // event arrived.
-func streamOnce(ctx context.Context, reg *Registry, tenant string, keys []string,
+func streamOnce(runCtx, ctx context.Context, reg *Registry, tenant string, keys []string,
 	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger) (received bool, err error) {
 	c, err := reg.trackerClient(ctx, tenant)
 	if err != nil {
@@ -121,7 +123,7 @@ func streamOnce(ctx context.Context, reg *Registry, tenant string, keys []string
 			return received, err
 		}
 		received = true
-		if herr := handle(ctx, tenant, ev); herr != nil {
+		if herr := handle(runCtx, tenant, ev); herr != nil {
 			log.Error("handle tracker event", "tenant", tenant, "external_id", ev.GetExternalId(), "error", herr)
 		}
 	}

@@ -209,6 +209,7 @@ type recordingTracker struct {
 	pluginv1.UnimplementedTrackerAdapterServer
 	mu    sync.Mutex
 	calls []*streamCall
+	event *pluginv1.TrackerEvent // sent on every stream when set
 }
 
 func (f *recordingTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
@@ -220,6 +221,11 @@ func (f *recordingTracker) StreamEvents(req *pluginv1.StreamEventsRequest, s plu
 	f.mu.Lock()
 	f.calls = append(f.calls, c)
 	f.mu.Unlock()
+	if f.event != nil {
+		if err := s.Send(f.event); err != nil {
+			return err
+		}
+	}
 	<-s.Context().Done()
 	close(c.cancelled)
 	return nil
@@ -267,13 +273,19 @@ func tenantWith(keys ...string) *config.Config {
 // it (waiting for Run to return) on cleanup.
 func startIngest(t *testing.T, initial *config.Config) (*mutableSource, *config.Sync, *recordingTracker) {
 	t.Helper()
+	return startIngestWith(t, initial, &recordingTracker{},
+		func(context.Context, string, *pluginv1.TrackerEvent) error { return nil })
+}
+
+func startIngestWith(t *testing.T, initial *config.Config, tr *recordingTracker,
+	handle func(context.Context, string, *pluginv1.TrackerEvent) error) (*mutableSource, *config.Sync, *recordingTracker) {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	src := &mutableSource{cfg: initial}
 	cfg, err := config.NewSync(context.Background(), src, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tr := &recordingTracker{}
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	pluginv1.RegisterTrackerAdapterServer(srv, tr)
@@ -288,7 +300,7 @@ func startIngest(t *testing.T, initial *config.Config) (*mutableSource, *config.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		run(ctx, cfg, reg, func(context.Context, string, *pluginv1.TrackerEvent) error { return nil },
+		run(ctx, cfg, reg, handle,
 			log, time.Millisecond, 10*time.Millisecond)
 	}()
 	t.Cleanup(func() {
@@ -360,5 +372,33 @@ func TestIngestSkipsTenantWithoutProjects(t *testing.T) {
 	eventually(t, "stream with [RES]", func() bool { return len(tr.snapshot()) >= 1 })
 	if calls := tr.snapshot(); len(calls) != 1 || !slices.Equal(calls[0].keys, []string{"RES"}) {
 		t.Fatalf("calls = %d, first keys = %v; want exactly one stream with [RES]", len(calls), calls[0].keys)
+	}
+}
+
+func TestIngestHandlerKeepsLiveContextWhenKeysChange(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	handlerCtxErr := make(chan error, 1)
+	var once sync.Once
+	tr := &recordingTracker{event: &pluginv1.TrackerEvent{ExternalId: "e1"}}
+	src, cfg, _ := startIngestWith(t, tenantWith("RES"), tr,
+		func(ctx context.Context, _ string, _ *pluginv1.TrackerEvent) error {
+			first := false
+			once.Do(func() { first = true })
+			if !first { // event of the restarted stream
+				return nil
+			}
+			close(started)
+			<-release
+			handlerCtxErr <- ctx.Err()
+			return nil
+		})
+	<-started
+
+	reload(t, src, cfg, tenantWith("RES", "ORC")) // cancels the tenant's stream
+	eventually(t, "first stream cancelled", func() bool { return isClosed(tr.snapshot()[0].cancelled) })
+	close(release)
+
+	if err := <-handlerCtxErr; err != nil {
+		t.Fatalf("handler ctx was cancelled mid-event: %v", err)
 	}
 }
