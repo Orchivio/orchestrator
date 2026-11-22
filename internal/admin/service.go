@@ -77,9 +77,9 @@ func (s *Service) validateTenant(t Tenant) []config.FieldError {
 	if !slugPattern.MatchString(t.Slug) {
 		errs = append(errs, config.FieldError{Field: "slug", Message: "must match " + slugPattern.String()})
 	}
-	for field, name := range map[string]string{"trackerAdapter": t.TrackerAdapter, "codeHostAdapter": t.CodeHostAdapter} {
-		if _, ok := s.adapters[name]; !ok {
-			errs = append(errs, config.FieldError{Field: field, Message: "unknown adapter " + quote(name)})
+	for _, f := range []struct{ field, name string }{{"trackerAdapter", t.TrackerAdapter}, {"codeHostAdapter", t.CodeHostAdapter}} {
+		if _, ok := s.adapters[f.name]; !ok {
+			errs = append(errs, config.FieldError{Field: f.field, Message: "unknown adapter " + quote(f.name)})
 		}
 	}
 	return errs
@@ -147,8 +147,8 @@ func validateProfile(p Profile) []config.FieldError {
 	if p.Runtime == "" {
 		errs = append(errs, config.FieldError{Field: "runtime", Message: msgRequired})
 	}
-	if p.MaxDuration <= 0 {
-		errs = append(errs, config.FieldError{Field: "maxDuration", Message: "must be greater than 0"})
+	if p.MaxDuration < time.Second {
+		errs = append(errs, config.FieldError{Field: "maxDuration", Message: "must be at least 1s"})
 	}
 	return errs
 }

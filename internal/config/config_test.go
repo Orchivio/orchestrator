@@ -51,3 +51,18 @@ func TestParseAdapters(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateProjectChecksTrackerKeyFormat(t *testing.T) {
+	tn := Tenant{Profiles: map[string]Profile{"d": {}}}
+	want := []FieldError{{"trackerKey", "must be uppercase letters and digits, starting with a letter"}}
+	for _, bad := range []string{"orc", "1ORC", "OR-C", "ABCDEFGHIJK", " ORC"} {
+		if got := ValidateProject(tn, Project{Name: "n", TrackerKey: bad, Profile: "d"}); !slices.Equal(got, want) {
+			t.Errorf("%q: got %v", bad, got)
+		}
+	}
+	for _, ok := range []string{"O", "ORC", "ORC2", "ABCDEFGHIJ"} {
+		if got := ValidateProject(tn, Project{Name: "n", TrackerKey: ok, Profile: "d"}); len(got) != 0 {
+			t.Errorf("%q: got %v", ok, got)
+		}
+	}
+}

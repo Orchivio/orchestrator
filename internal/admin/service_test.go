@@ -413,3 +413,24 @@ func TestChildrenOfMissingOrDeletedTenantAreNotFound(t *testing.T) {
 		}
 	}
 }
+
+func TestProfileMaxDurationBelowOneSecondIsInvalid(t *testing.T) {
+	svc := newTestService(t)
+	seed(t, svc)
+	_, err := svc.CreateProfile(ctx, admin.Profile{TenantSlug: "acme", Name: "fast", Runtime: "podman", MaxDuration: 500 * time.Millisecond})
+	var ve *admin.ValidationError
+	if !errors.As(err, &ve) || fieldMessage(ve, "maxDuration") != "must be at least 1s" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestValidateTenantReportsAdapterFieldsInFixedOrder(t *testing.T) {
+	svc := newTestService(t)
+	for range 20 {
+		_, err := svc.CreateTenant(ctx, admin.Tenant{Slug: "acme", TrackerAdapter: "x", CodeHostAdapter: "y"})
+		var ve *admin.ValidationError
+		if !errors.As(err, &ve) || len(ve.Fields) != 2 || ve.Fields[0].Field != "trackerAdapter" || ve.Fields[1].Field != "codeHostAdapter" {
+			t.Fatalf("err = %v", err)
+		}
+	}
+}

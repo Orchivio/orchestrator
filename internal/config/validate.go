@@ -2,9 +2,12 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 )
+
+var trackerKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{0,9}$`)
 
 // FieldError names the invalid field (JSON path notation) and why.
 type FieldError struct {
@@ -29,6 +32,8 @@ func ValidateProject(t Tenant, p Project) []FieldError {
 	}
 	if p.TrackerKey == "" {
 		add("trackerKey", "required")
+	} else if !trackerKeyPattern.MatchString(p.TrackerKey) {
+		add("trackerKey", "must be uppercase letters and digits, starting with a letter")
 	}
 	if _, ok := t.Profiles[p.Profile]; !ok {
 		add("profile", "unknown profile %q", p.Profile)
