@@ -51,7 +51,7 @@ func (f *fakeTracker) StreamEvents(_ *pluginv1.StreamEventsRequest, s pluginv1.T
 }
 
 func TestIngestForwardsEventsAndReconnects(t *testing.T) {
-	cfg, err := config.NewSync("../../dev/config", time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func (*oldTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesReq
 
 func TestRegistryRefusesWrongContractVersion(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg, err := config.NewSync("../../dev/config", time.Hour, log)
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestRegistryRefusesWrongContractVersion(t *testing.T) {
 
 func TestIngestContinuesAfterHandlerError(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg, err := config.NewSync("../../dev/config", time.Hour, log)
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,4 +168,13 @@ func TestIngestContinuesAfterHandlerError(t *testing.T) {
 			t.Fatalf("timeout waiting for %s", want)
 		}
 	}
+}
+
+func testConfig() *config.Config {
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "adapter-linear:7101"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "adapter-github:7201"},
+		Projects: []config.Project{{Name: "demo", TrackerKey: "ORC", Milestones: config.DefaultMilestones()}},
+	}}}
 }

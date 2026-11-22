@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -25,17 +23,19 @@ import (
 	workerv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1"
 )
 
-const cfgYAML = `tenant: acme
-tracker: { name: linear, address: x }
-codeHost: { name: github, address: y }
-profiles:
-  default: { runtime: claude-code, model: m, maxDuration: 20m }
-projects:
-  - name: demo
-    trackerKey: ORC
-    profile: default
-    repos: [ { slug: a/b, baseBranch: main, allowedPaths: ["src/"] } ]
-`
+func testConfig() *config.Config {
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "x"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "y"},
+		Profiles: map[string]config.Profile{"default": {Runtime: "claude-code", Model: "m", MaxDuration: 20 * time.Minute}},
+		Projects: []config.Project{{
+			Name: "demo", TrackerKey: "ORC", Profile: "default",
+			Repos:      []config.Repo{{Slug: "a/b", BaseBranch: "main", AllowedPaths: []string{"src/"}}},
+			Milestones: config.DefaultMilestones(),
+		}},
+	}}}
+}
 
 type store struct {
 	runs map[uuid.UUID]*router.Run
@@ -98,11 +98,7 @@ func setup(t *testing.T) (workerv1.WorkerServiceClient, uuid.UUID) {
 
 func setupWithStore(t *testing.T) (workerv1.WorkerServiceClient, uuid.UUID, *store) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(cfgYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.NewSync(dir, time.Hour, slog.New(slog.DiscardHandler))
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

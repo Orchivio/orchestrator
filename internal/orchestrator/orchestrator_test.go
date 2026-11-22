@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -22,20 +20,23 @@ import (
 
 const branch = "orchivio/orc-12-abcd"
 
-const cfgYAML = `tenant: acme
-tracker: { name: linear, address: localhost:7101 }
-codeHost: { name: github, address: localhost:7201 }
-profiles:
-  default: { runtime: claude-code, model: m1, instructions: be nice, maxDuration: 20m }
-projects:
-  - name: demo
-    trackerKey: ORC
-    profile: default
-    repos:
-      - { slug: soemii/a, baseBranch: main, allowedPaths: ["src/", "docs/"] }
-      - { slug: soemii/b, baseBranch: develop, allowedPaths: ["src/"] }
-    maxDiffLines: 300
-`
+func testConfig() *config.Config {
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "localhost:7101"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "localhost:7201"},
+		Profiles: map[string]config.Profile{"default": {Runtime: "claude-code", Model: "m1", Instructions: "be nice", MaxDuration: 20 * time.Minute}},
+		Projects: []config.Project{{
+			Name: "demo", TrackerKey: "ORC", Profile: "default",
+			Repos: []config.Repo{
+				{Slug: "soemii/a", BaseBranch: "main", AllowedPaths: []string{"src/", "docs/"}},
+				{Slug: "soemii/b", BaseBranch: "develop", AllowedPaths: []string{"src/"}},
+			},
+			MaxDiffLines: 300,
+			Milestones:   config.DefaultMilestones(),
+		}},
+	}}}
+}
 
 type fakeStore struct {
 	mu         sync.Mutex
@@ -134,11 +135,7 @@ type fixture struct {
 
 func newFixture(t *testing.T, kind string) *fixture {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(cfgYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sync, err := config.NewSync(dir, time.Hour, slog.New(slog.DiscardHandler))
+	sync, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

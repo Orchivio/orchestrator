@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -42,24 +41,26 @@ const (
 	waitMax   = 5 * time.Second
 )
 
-const configYAML = `tenant: acme
-tracker: { name: linear, address: tracker }
-codeHost: { name: github, address: codehost }
-profiles:
-  default: { runtime: claude-code, model: m, maxDuration: 20m }
-projects:
-  - name: demo
-    trackerKey: ORC
-    profile: default
-    repos:
-      - { slug: acme/playground, baseBranch: main, allowedPaths: [""] }
-    classifier:
-      taskLabels: ["orchivio:aufgabe"]
-      questionLabels: ["orchivio:frage"]
-      defaultRepo: acme/playground
-    roles: { questions: ["dev@example.com"], tasks: ["dev@example.com"] }
-    maxDiffLines: 500
-`
+func testConfig() *config.Config {
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "tracker"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "codehost"},
+		Profiles: map[string]config.Profile{"default": {Runtime: "claude-code", Model: "m", MaxDuration: 20 * time.Minute}},
+		Projects: []config.Project{{
+			Name: "demo", TrackerKey: "ORC", Profile: "default",
+			Repos: []config.Repo{{Slug: "acme/playground", BaseBranch: "main", AllowedPaths: []string{""}}},
+			Classifier: config.ClassifierRules{
+				TaskLabels:     []string{"orchivio:aufgabe"},
+				QuestionLabels: []string{"orchivio:frage"},
+				DefaultRepo:    "acme/playground",
+			},
+			Roles:        config.Roles{Questions: []string{"dev@example.com"}, Tasks: []string{"dev@example.com"}},
+			MaxDiffLines: 500,
+			Milestones:   config.DefaultMilestones(),
+		}},
+	}}}
+}
 
 type fakeTracker struct {
 	pluginv1.UnimplementedTrackerAdapterServer
@@ -198,11 +199,7 @@ func setup(t *testing.T) *env {
 	t.Cleanup(cancel)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(configYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.NewSync(dir, time.Hour, log)
+	cfg, err := config.NewSync(ctx, config.Static{Config: testConfig()}, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}

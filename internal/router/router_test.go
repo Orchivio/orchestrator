@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -176,30 +174,26 @@ type fixture struct {
 
 func newFixture(t *testing.T, defaultRepo string) *fixture {
 	t.Helper()
-	dir := t.TempDir()
-	yaml := fmt.Sprintf(`tenant: acme
-tracker: { name: linear, address: localhost:7101 }
-codeHost: { name: github, address: localhost:7201 }
-profiles:
-  default: { runtime: claude-code, model: m, maxDuration: 20m }
-projects:
-  - name: demo
-    trackerKey: ORC
-    profile: default
-    repos:
-      - { slug: soemii/playground, baseBranch: main, allowedPaths: [""] }
-    classifier:
-      taskLabels: ["orchivio:aufgabe"]
-      questionLabels: ["orchivio:frage"]
-      repoLabels: { "repo:playground": soemii/playground }
-      defaultRepo: %q
-    roles: { questions: ["%s", "%s"], tasks: ["%s"] }
-    maxDiffLines: 500
-`, defaultRepo, actor, asker, actor)
-	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(yaml), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sync, err := config.NewSync(dir, time.Hour, slog.New(slog.DiscardHandler))
+	cfg := &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "localhost:7101"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "localhost:7201"},
+		Profiles: map[string]config.Profile{"default": {Runtime: "claude-code", Model: "m", MaxDuration: 20 * time.Minute}},
+		Projects: []config.Project{{
+			Name: "demo", TrackerKey: "ORC", Profile: "default",
+			Repos: []config.Repo{{Slug: "soemii/playground", BaseBranch: "main", AllowedPaths: []string{""}}},
+			Classifier: config.ClassifierRules{
+				TaskLabels:     []string{"orchivio:aufgabe"},
+				QuestionLabels: []string{"orchivio:frage"},
+				RepoLabels:     map[string]string{"repo:playground": "soemii/playground"},
+				DefaultRepo:    defaultRepo,
+			},
+			Roles:        config.Roles{Questions: []string{actor, asker}, Tasks: []string{actor}},
+			MaxDiffLines: 500,
+			Milestones:   config.DefaultMilestones(),
+		}},
+	}}}
+	sync, err := config.NewSync(context.Background(), config.Static{Config: cfg}, time.Hour, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -64,7 +64,7 @@ func run(parent context.Context, log *slog.Logger) error {
 	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", "127.0.0.1:7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
 	publicURL := env("ORCHIVIO_PUBLIC_URL", "http://localhost:8088")
 
-	cfg, err := config.NewSync(configDir, configReloadInterval, log)
+	cfg, err := config.NewSync(ctx, config.Static{}, configReloadInterval, log) // Task 8 replaces Static with the database source
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
