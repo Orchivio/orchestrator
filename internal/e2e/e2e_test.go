@@ -62,8 +62,11 @@ func (f *fakeTracker) emit(ev *pluginv1.TrackerEvent) bool {
 	delivered := false
 	for ch, keys := range f.streams {
 		if slices.Contains(keys, ev.GetProjectKey()) {
-			ch <- ev
-			delivered = true
+			select { // never block under the mutex; a full stream counts as not delivered and the caller retries
+			case ch <- ev:
+				delivered = true
+			default:
+			}
 		}
 	}
 	return delivered

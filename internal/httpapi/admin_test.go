@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -223,5 +224,18 @@ func TestChildrenOfDeletedTenantAre404(t *testing.T) {
 	}
 	if rec := e.do("PUT", loc, projectBody(pid, "o/x")); rec.Code != 404 {
 		t.Errorf("PUT = %d", rec.Code)
+	}
+}
+
+func TestBadIDWithBadIfMatchWritesOneProblem(t *testing.T) {
+	e := newEnv(t)
+	e.seedTenantAndProfile()
+	for _, c := range [][2]string{{"PUT", "profiles"}, {"DELETE", "profiles"}, {"PUT", "projects"}, {"DELETE", "projects"}} {
+		rec := e.do(c[0], "/api/v1/tenants/acme/"+c[1]+"/not-a-uuid", `{}`, "If-Match", "bogus")
+		dec := json.NewDecoder(bytes.NewReader(rec.Body.Bytes()))
+		var first, second map[string]any
+		if rec.Code != 404 || dec.Decode(&first) != nil || dec.Decode(&second) != io.EOF {
+			t.Errorf("%s %s: %d %q", c[0], c[1], rec.Code, rec.Body.String())
+		}
 	}
 }

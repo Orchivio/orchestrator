@@ -86,7 +86,7 @@ ORCHIVIO_VERSION=1.2.0 dev/run-all.sh  # eine veröffentlichte Version
 dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im Volume
 ```
 
-`run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur die Timeline (`127.0.0.1:8088`) ist vom Rechner aus erreichbar; gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
+`run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur der HTTP-Port (`127.0.0.1:8088`) ist vom Rechner aus erreichbar: Timeline und Admin-API (`/api/v1`, Bearer-Token über unverschlüsseltes HTTP, daher nur lokal); gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
 
 ## Bauen und Veröffentlichen
 

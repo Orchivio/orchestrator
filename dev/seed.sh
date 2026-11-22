@@ -27,9 +27,21 @@ call() { # call METHOD PATH [BODY]; Token nur im Header
   curl "${args[@]}" "$api$path"
 }
 
-# Warten, bis die API antwortet.
-curl --retry 30 --retry-connrefused --retry-delay 1 -fsS -o /dev/null \
-  -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" "$api/tenants"
+# Warten, bis die API antwortet; 401 heißt: das Bootstrap-Token passt nicht.
+ready="$(curl --retry 30 --retry-connrefused --retry-delay 1 -sS -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" "$api/tenants")"
+if [[ "$ready" == 401 ]]; then
+  cat >&2 <<'MSG'
+Fehler: Die API lehnt das Token ab (HTTP 401). Das Bootstrap-Token gilt nur bei leerer Token-Tabelle.
+Entweder ein Token anlegen und als ORCHIVIO_BOOTSTRAP_TOKEN in dev/.env setzen:
+  podman compose -f dev/compose.yaml exec orchestrator /orchivio-server admin create-token
+oder das Volume zurücksetzen (Datenverlust): podman compose -f dev/compose.yaml down -v
+MSG
+  exit 1
+elif [[ "$ready" != 200 ]]; then
+  echo "Fehler: GET /tenants lieferte HTTP $ready" >&2
+  exit 1
+fi
 
 status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" "$api/tenants/$tenant")"

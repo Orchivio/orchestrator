@@ -376,8 +376,11 @@ func (a *adminAPI) getProfile(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) putProfile(w http.ResponseWriter, r *http.Request) {
 	var d profileDTO
 	id, ok := pathID(w, r)
-	version, okMatch := ifMatch(w, r)
-	if !ok || !okMatch || !decodeBody(w, r, &d) {
+	if !ok {
+		return
+	}
+	version, ok := ifMatch(w, r)
+	if !ok || !decodeBody(w, r, &d) {
 		return
 	}
 	p, err := d.domain(r.PathValue("slug"), id)
@@ -393,8 +396,10 @@ func (a *adminAPI) putProfile(w http.ResponseWriter, r *http.Request) {
 
 func (a *adminAPI) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
-	version, okMatch := ifMatch(w, r)
-	if ok && okMatch {
+	if !ok {
+		return
+	}
+	if version, ok := ifMatch(w, r); ok {
 		a.noContent(w, a.svc.DeleteProfile(r.Context(), r.PathValue("slug"), id, version))
 	}
 }
@@ -439,8 +444,11 @@ func (a *adminAPI) getProject(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) putProject(w http.ResponseWriter, r *http.Request) {
 	var d projectDTO
 	id, ok := pathID(w, r)
-	version, okMatch := ifMatch(w, r)
-	if !ok || !okMatch || !decodeBody(w, r, &d) {
+	if !ok {
+		return
+	}
+	version, ok := ifMatch(w, r)
+	if !ok || !decodeBody(w, r, &d) {
 		return
 	}
 	p, err := d.domain(r.PathValue("slug"), id)
@@ -456,8 +464,10 @@ func (a *adminAPI) putProject(w http.ResponseWriter, r *http.Request) {
 
 func (a *adminAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
-	version, okMatch := ifMatch(w, r)
-	if ok && okMatch {
+	if !ok {
+		return
+	}
+	if version, ok := ifMatch(w, r); ok {
 		a.noContent(w, a.svc.DeleteProject(r.Context(), r.PathValue("slug"), id, version))
 	}
 }

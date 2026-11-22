@@ -41,7 +41,7 @@ paths:
       summary: Replace a tenant
       operationId: putTenant
       parameters: [{$ref: "#/components/parameters/IfMatch"}]
-      requestBody: {$ref: "#/components/requestBodies/Tenant"}
+      requestBody: {$ref: "#/components/requestBodies/TenantUpdate"}
       responses:
         "200": {$ref: "#/components/responses/TenantOK"}
         "400": {$ref: "#/components/responses/BadRequest"}
@@ -208,6 +208,7 @@ components:
     ETag: {schema: {type: string, examples: ['"1"']}}
   requestBodies:
     Tenant: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Tenant"}}}}
+    TenantUpdate: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/TenantUpdate"}}}}
     Profile: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Profile"}}}}
     Project: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
   responses:
@@ -236,6 +237,15 @@ components:
         version: {type: integer, format: int64, readOnly: true}
         createdAt: {type: string, format: date-time, readOnly: true}
         updatedAt: {type: string, format: date-time, readOnly: true}
+    TenantUpdate:
+      type: object
+      additionalProperties: false
+      required: [displayName, trackerAdapter, codeHostAdapter]
+      properties:
+        slug: {type: string, description: Optional and ignored; the path wins}
+        displayName: {type: string}
+        trackerAdapter: {type: string, description: Immutable}
+        codeHostAdapter: {type: string}
     Profile:
       type: object
       additionalProperties: false
