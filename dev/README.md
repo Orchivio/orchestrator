@@ -48,19 +48,35 @@ Orchivio läuft in Linear als **App-User** einer OAuth-App: eigener Nutzer, erw�
 1. Settings, API, **OAuth applications**, neue App anlegen (<https://linear.app/settings/api/applications/new>). Name **Orchivio** (wird zum Anzeigenamen des App-Users). Callback-URL ist Pflicht, wird aber nicht genutzt: `http://localhost/callback`. Webhooks aus.
 2. In der App **Client credentials** aktivieren. Client-ID und Client-Secret kommen als `LINEAR_CLIENT_ID` und `LINEAR_CLIENT_SECRET` in die `.env`.
 3. Beim Start holt der Adapter selbst ein Token (`client_credentials`, Scopes `read,write,app:assignable,app:mentionable`, 30 Tage gültig) und erneuert es rechtzeitig. Damit erscheint der App-User im Workspace. Er hat Zugriff auf alle öffentlichen Teams.
-4. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört in `LINEAR_TEAM_KEYS` und in `trackerKey` der Config.
+4. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört als `ORCHIVIO_SEED_TEAM_KEY` in die `.env` (und damit in `trackerKey` des Projekts).
 5. Bedienung: In einem Ticket des Teams `@Orchivio` im Kommentar erwähnen, oder das Ticket an Orchivio delegieren (Zuweisen-Menü, Orchivio auswählen).
 
 Alternative ohne OAuth-App: eigener Nutzer „Orchivio“ (zweiter Account, kostet einen Platz) mit persönlichem API-Key als `LINEAR_TOKEN_ACME` und `LINEAR_API_KEY_REF`, `LINEAR_CLIENT_ID` leer lassen. Nicht der eigene Account: Kommentare des Key-Besitzers ignoriert der Adapter.
 
-## Konfiguration anpassen
+## Mandant und Projekt anlegen
 
-`dev/config/acme.yaml` bearbeiten:
+`dev/run-all.sh` ruft nach dem Start `dev/seed.sh` auf. Das Skript legt über die Admin-API (`http://localhost:8088/api/v1`, Bearer-Token `ORCHIVIO_BOOTSTRAP_TOKEN`) Mandant, Profil `default` und Projekt `demo` an; wiederholte Aufrufe ändern nichts. Die Werte kommen aus der `.env`:
 
-- `roles.questions` und `roles.tasks`: deine Linear-E-Mail-Adresse statt `you@example.com`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
-- `projects[].trackerKey`: dein Team-Key.
-- `repos[].slug`, `classifier.defaultRepo`, `classifier.repoLabels`: dein Test-Repo (`owner/name`).
-- `profiles.*.model` (`model:`): die Modell-ID gegen die Modelle prüfen, die dein Key bzw. dein Abo nutzen darf. Ein Alias wie `sonnet` funktioniert mit Claude Code.
+- `ORCHIVIO_BOOTSTRAP_TOKEN`: Admin-Token, gilt nur bei leerer Token-Tabelle (Erzeugung siehe `dev/env.example`).
+- `ORCHIVIO_SEED_TENANT`: Mandanten-Slug.
+- `ORCHIVIO_SEED_TEAM_KEY`: dein Linear-Team-Key (`trackerKey`).
+- `ORCHIVIO_SEED_REPO`: Test-Repo `owner/name` (Repo, `defaultRepo`, `repoLabels`).
+- `ORCHIVIO_SEED_EMAIL`: deine Linear-E-Mail-Adresse für `roles.questions` und `roles.tasks`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
+- `ORCHIVIO_SEED_MODEL`: Modell des Profils; ein Alias wie `sonnet` funktioniert mit Claude Code.
+
+Ein weiteres Projekt lässt sich zur Laufzeit ohne Neustart anlegen (`<profile-id>` aus `GET /tenants/acme/profiles`):
+
+```sh
+curl -fsS -X POST http://localhost:8088/api/v1/tenants/acme/projects \
+  -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "zweites", "trackerKey": "ABC", "profileId": "<profile-id>",
+       "repos": [{"slug": "owner/name", "baseBranch": "main", "allowedPaths": [""]}],
+       "classifier": {"taskLabels": ["orchivio:aufgabe"], "questionLabels": ["orchivio:frage"], "defaultRepo": "owner/name"},
+       "roles": {"questions": ["you@example.com"], "tasks": ["you@example.com"]},
+       "maxDiffLines": 500}'
+```
+
+Alle Ressourcen und Felder: `api/openapi.yaml`.
 
 ## Starten und Stoppen
 
