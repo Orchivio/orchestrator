@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const activeRun = `-- name: ActiveRun :one
-SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at FROM runs
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id FROM runs
 WHERE conversation_id = $1
   AND state IN ('classifying', 'queued', 'running', 'pushing', 'waiting_for_input')
 ORDER BY created_at DESC, id LIMIT 1
@@ -40,6 +41,7 @@ func (q *Queries) ActiveRun(ctx context.Context, conversationID uuid.UUID) (Run,
 		&i.LeaseUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -113,6 +115,55 @@ func (q *Queries) ClaimInputs(ctx context.Context, arg ClaimInputsParams) error 
 	return err
 }
 
+const countLiveProjectsOfProfile = `-- name: CountLiveProjectsOfProfile :one
+SELECT count(*) FROM projects WHERE profile_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) CountLiveProjectsOfProfile(ctx context.Context, profileID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveProjectsOfProfile, profileID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTokens = `-- name: CountTokens :one
+SELECT count(*) FROM tokens
+`
+
+func (q *Queries) CountTokens(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTokens)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUnfinishedRunsOfProject = `-- name: CountUnfinishedRunsOfProject :one
+SELECT count(*) FROM runs WHERE tenant_id = $1 AND project = $2 AND state NOT IN ('succeeded', 'failed', 'cancelled')
+`
+
+type CountUnfinishedRunsOfProjectParams struct {
+	TenantID string
+	Project  string
+}
+
+func (q *Queries) CountUnfinishedRunsOfProject(ctx context.Context, arg CountUnfinishedRunsOfProjectParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnfinishedRunsOfProject, arg.TenantID, arg.Project)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUnfinishedRunsOfTenant = `-- name: CountUnfinishedRunsOfTenant :one
+SELECT count(*) FROM runs WHERE tenant_id = $1 AND state NOT IN ('succeeded', 'failed', 'cancelled')
+`
+
+func (q *Queries) CountUnfinishedRunsOfTenant(ctx context.Context, tenantID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnfinishedRunsOfTenant, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createConversation = `-- name: CreateConversation :exec
 INSERT INTO conversations (id, tenant_id, project, ticket_ref, created_at)
 VALUES ($1, $2, $3, $4, $5)
@@ -137,10 +188,98 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 	return err
 }
 
+const createProfile = `-- name: CreateProfile :one
+INSERT INTO profiles (id, tenant_slug, name, runtime, model, instructions, max_duration_seconds, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) RETURNING id, tenant_slug, name, runtime, model, instructions, max_duration_seconds, version, created_at, updated_at, deleted_at
+`
+
+type CreateProfileParams struct {
+	ID                 uuid.UUID
+	TenantSlug         string
+	Name               string
+	Runtime            string
+	Model              string
+	Instructions       string
+	MaxDurationSeconds int64
+	CreatedAt          time.Time
+}
+
+func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, createProfile,
+		arg.ID,
+		arg.TenantSlug,
+		arg.Name,
+		arg.Runtime,
+		arg.Model,
+		arg.Instructions,
+		arg.MaxDurationSeconds,
+		arg.CreatedAt,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.Name,
+		&i.Runtime,
+		&i.Model,
+		&i.Instructions,
+		&i.MaxDurationSeconds,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createProject = `-- name: CreateProject :one
+INSERT INTO projects (id, tenant_slug, tracker_adapter, tracker_key, name, profile_id, spec, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) RETURNING id, tenant_slug, tracker_adapter, tracker_key, name, profile_id, spec, version, created_at, updated_at, deleted_at
+`
+
+type CreateProjectParams struct {
+	ID             uuid.UUID
+	TenantSlug     string
+	TrackerAdapter string
+	TrackerKey     string
+	Name           string
+	ProfileID      uuid.UUID
+	Spec           []byte
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, createProject,
+		arg.ID,
+		arg.TenantSlug,
+		arg.TrackerAdapter,
+		arg.TrackerKey,
+		arg.Name,
+		arg.ProfileID,
+		arg.Spec,
+		arg.CreatedAt,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.TrackerAdapter,
+		&i.TrackerKey,
+		&i.Name,
+		&i.ProfileID,
+		&i.Spec,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const createRun = `-- name: CreateRun :exec
-INSERT INTO runs (id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch,
+INSERT INTO runs (id, tenant_id, conversation_id, project, project_id, ticket_ref, kind, state, repos, branch,
                   prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 `
 
 type CreateRunParams struct {
@@ -148,6 +287,7 @@ type CreateRunParams struct {
 	TenantID       string
 	ConversationID uuid.UUID
 	Project        string
+	ProjectID      *uuid.UUID
 	TicketRef      string
 	Kind           string
 	State          string
@@ -169,6 +309,7 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 		arg.TenantID,
 		arg.ConversationID,
 		arg.Project,
+		arg.ProjectID,
 		arg.TicketRef,
 		arg.Kind,
 		arg.State,
@@ -184,6 +325,155 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 		arg.UpdatedAt,
 	)
 	return err
+}
+
+const createTenant = `-- name: CreateTenant :one
+INSERT INTO tenants (slug, display_name, tracker_adapter, code_host_adapter, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $5) RETURNING slug, display_name, tracker_adapter, code_host_adapter, version, created_at, updated_at, deleted_at
+`
+
+type CreateTenantParams struct {
+	Slug            string
+	DisplayName     string
+	TrackerAdapter  string
+	CodeHostAdapter string
+	CreatedAt       time.Time
+}
+
+func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, createTenant,
+		arg.Slug,
+		arg.DisplayName,
+		arg.TrackerAdapter,
+		arg.CodeHostAdapter,
+		arg.CreatedAt,
+	)
+	var i Tenant
+	err := row.Scan(
+		&i.Slug,
+		&i.DisplayName,
+		&i.TrackerAdapter,
+		&i.CodeHostAdapter,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createToken = `-- name: CreateToken :one
+INSERT INTO tokens (id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at
+`
+
+type CreateTokenParams struct {
+	ID         uuid.UUID
+	Name       string
+	Prefix     string
+	Hash       []byte
+	Scope      string
+	TenantSlug pgtype.Text
+	Role       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
+func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token, error) {
+	row := q.db.QueryRow(ctx, createToken,
+		arg.ID,
+		arg.Name,
+		arg.Prefix,
+		arg.Hash,
+		arg.Scope,
+		arg.TenantSlug,
+		arg.Role,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	var i Token
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Prefix,
+		&i.Hash,
+		&i.Scope,
+		&i.TenantSlug,
+		&i.Role,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const deleteProfile = `-- name: DeleteProfile :execrows
+UPDATE profiles SET deleted_at = $3, updated_at = $3, version = version + 1
+WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND ($4::bigint = 0 OR version = $4)
+`
+
+type DeleteProfileParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+	DeletedAt  *time.Time
+	IfVersion  int64
+}
+
+func (q *Queries) DeleteProfile(ctx context.Context, arg DeleteProfileParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProfile,
+		arg.TenantSlug,
+		arg.ID,
+		arg.DeletedAt,
+		arg.IfVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteProject = `-- name: DeleteProject :execrows
+UPDATE projects SET deleted_at = $3, updated_at = $3, version = version + 1
+WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND ($4::bigint = 0 OR version = $4)
+`
+
+type DeleteProjectParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+	DeletedAt  *time.Time
+	IfVersion  int64
+}
+
+func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProject,
+		arg.TenantSlug,
+		arg.ID,
+		arg.DeletedAt,
+		arg.IfVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteTenant = `-- name: DeleteTenant :execrows
+UPDATE tenants SET deleted_at = $2, updated_at = $2, version = version + 1
+WHERE slug = $1 AND deleted_at IS NULL AND ($3::bigint = 0 OR version = $3)
+`
+
+type DeleteTenantParams struct {
+	Slug      string
+	DeletedAt *time.Time
+	IfVersion int64
+}
+
+func (q *Queries) DeleteTenant(ctx context.Context, arg DeleteTenantParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTenant, arg.Slug, arg.DeletedAt, arg.IfVersion)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const findConversation = `-- name: FindConversation :one
@@ -225,8 +515,64 @@ func (q *Queries) GetConversation(ctx context.Context, id uuid.UUID) (Conversati
 	return i, err
 }
 
+const getProfile = `-- name: GetProfile :one
+SELECT id, tenant_slug, name, runtime, model, instructions, max_duration_seconds, version, created_at, updated_at, deleted_at FROM profiles WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type GetProfileParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+}
+
+func (q *Queries) GetProfile(ctx context.Context, arg GetProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, getProfile, arg.TenantSlug, arg.ID)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.Name,
+		&i.Runtime,
+		&i.Model,
+		&i.Instructions,
+		&i.MaxDurationSeconds,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getProject = `-- name: GetProject :one
+SELECT id, tenant_slug, tracker_adapter, tracker_key, name, profile_id, spec, version, created_at, updated_at, deleted_at FROM projects WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type GetProjectParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+}
+
+func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getProject, arg.TenantSlug, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.TrackerAdapter,
+		&i.TrackerKey,
+		&i.Name,
+		&i.ProfileID,
+		&i.Spec,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getRun = `-- name: GetRun :one
-SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at FROM runs WHERE id = $1
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id FROM runs WHERE id = $1
 `
 
 func (q *Queries) GetRun(ctx context.Context, id uuid.UUID) (Run, error) {
@@ -250,12 +596,33 @@ func (q *Queries) GetRun(ctx context.Context, id uuid.UUID) (Run, error) {
 		&i.LeaseUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
+const getTenant = `-- name: GetTenant :one
+SELECT slug, display_name, tracker_adapter, code_host_adapter, version, created_at, updated_at, deleted_at FROM tenants WHERE slug = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) GetTenant(ctx context.Context, slug string) (Tenant, error) {
+	row := q.db.QueryRow(ctx, getTenant, slug)
+	var i Tenant
+	err := row.Scan(
+		&i.Slug,
+		&i.DisplayName,
+		&i.TrackerAdapter,
+		&i.CodeHostAdapter,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const lastRun = `-- name: LastRun :one
-SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at FROM runs WHERE conversation_id = $1 ORDER BY created_at DESC, id LIMIT 1
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id FROM runs WHERE conversation_id = $1 ORDER BY created_at DESC, id LIMIT 1
 `
 
 func (q *Queries) LastRun(ctx context.Context, conversationID uuid.UUID) (Run, error) {
@@ -279,6 +646,7 @@ func (q *Queries) LastRun(ctx context.Context, conversationID uuid.UUID) (Run, e
 		&i.LeaseUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -288,7 +656,7 @@ UPDATE runs SET state='running', lease_owner=$1, lease_until=$2, updated_at=$3
 WHERE id = (SELECT id FROM runs
             WHERE state='queued' OR (state='running' AND lease_until < $3)
             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
-RETURNING id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at
+RETURNING id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id
 `
 
 type LeaseNextParams struct {
@@ -319,6 +687,7 @@ func (q *Queries) LeaseNext(ctx context.Context, arg LeaseNextParams) (Run, erro
 		&i.LeaseUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -355,7 +724,7 @@ func (q *Queries) ListEvents(ctx context.Context, runID uuid.UUID) ([]Event, err
 }
 
 const listFinishedRuns = `-- name: ListFinishedRuns :many
-SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at FROM runs WHERE conversation_id = $1 AND result <> ''
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id FROM runs WHERE conversation_id = $1 AND result <> ''
   AND state IN ('succeeded', 'failed', 'cancelled') ORDER BY created_at, id
 `
 
@@ -387,6 +756,7 @@ func (q *Queries) ListFinishedRuns(ctx context.Context, conversationID uuid.UUID
 			&i.LeaseUntil,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -421,6 +791,146 @@ func (q *Queries) ListInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 			&i.RunID,
 			&i.CreatedAt,
 			&i.FromAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProfiles = `-- name: ListProfiles :many
+SELECT id, tenant_slug, name, runtime, model, instructions, max_duration_seconds, version, created_at, updated_at, deleted_at FROM profiles WHERE tenant_slug = $1 AND deleted_at IS NULL ORDER BY name
+`
+
+func (q *Queries) ListProfiles(ctx context.Context, tenantSlug string) ([]Profile, error) {
+	rows, err := q.db.Query(ctx, listProfiles, tenantSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Profile
+	for rows.Next() {
+		var i Profile
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantSlug,
+			&i.Name,
+			&i.Runtime,
+			&i.Model,
+			&i.Instructions,
+			&i.MaxDurationSeconds,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjects = `-- name: ListProjects :many
+SELECT id, tenant_slug, tracker_adapter, tracker_key, name, profile_id, spec, version, created_at, updated_at, deleted_at FROM projects WHERE tenant_slug = $1 AND deleted_at IS NULL ORDER BY tracker_key
+`
+
+func (q *Queries) ListProjects(ctx context.Context, tenantSlug string) ([]Project, error) {
+	rows, err := q.db.Query(ctx, listProjects, tenantSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Project
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantSlug,
+			&i.TrackerAdapter,
+			&i.TrackerKey,
+			&i.Name,
+			&i.ProfileID,
+			&i.Spec,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenants = `-- name: ListTenants :many
+SELECT slug, display_name, tracker_adapter, code_host_adapter, version, created_at, updated_at, deleted_at FROM tenants WHERE deleted_at IS NULL ORDER BY slug
+`
+
+func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
+	rows, err := q.db.Query(ctx, listTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tenant
+	for rows.Next() {
+		var i Tenant
+		if err := rows.Scan(
+			&i.Slug,
+			&i.DisplayName,
+			&i.TrackerAdapter,
+			&i.CodeHostAdapter,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTokens = `-- name: ListTokens :many
+SELECT id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at FROM tokens ORDER BY created_at DESC, id
+`
+
+func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
+	rows, err := q.db.Query(ctx, listTokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Token
+	for rows.Next() {
+		var i Token
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Prefix,
+			&i.Hash,
+			&i.Scope,
+			&i.TenantSlug,
+			&i.Role,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -486,6 +996,136 @@ func (q *Queries) OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 	return items, nil
 }
 
+const revokeToken = `-- name: RevokeToken :execrows
+UPDATE tokens SET revoked_at = coalesce(revoked_at, $2) WHERE id = $1
+`
+
+type RevokeTokenParams struct {
+	ID        uuid.UUID
+	RevokedAt *time.Time
+}
+
+func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeToken, arg.ID, arg.RevokedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const tokenByHash = `-- name: TokenByHash :one
+SELECT id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at FROM tokens WHERE hash = $1
+`
+
+func (q *Queries) TokenByHash(ctx context.Context, hash []byte) (Token, error) {
+	row := q.db.QueryRow(ctx, tokenByHash, hash)
+	var i Token
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Prefix,
+		&i.Hash,
+		&i.Scope,
+		&i.TenantSlug,
+		&i.Role,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const updateProfile = `-- name: UpdateProfile :one
+UPDATE profiles SET name = $3, runtime = $4, model = $5, instructions = $6, max_duration_seconds = $7,
+                    version = version + 1, updated_at = $8
+WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND ($9::bigint = 0 OR version = $9)
+RETURNING id, tenant_slug, name, runtime, model, instructions, max_duration_seconds, version, created_at, updated_at, deleted_at
+`
+
+type UpdateProfileParams struct {
+	TenantSlug         string
+	ID                 uuid.UUID
+	Name               string
+	Runtime            string
+	Model              string
+	Instructions       string
+	MaxDurationSeconds int64
+	UpdatedAt          time.Time
+	IfVersion          int64
+}
+
+func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, updateProfile,
+		arg.TenantSlug,
+		arg.ID,
+		arg.Name,
+		arg.Runtime,
+		arg.Model,
+		arg.Instructions,
+		arg.MaxDurationSeconds,
+		arg.UpdatedAt,
+		arg.IfVersion,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.Name,
+		&i.Runtime,
+		&i.Model,
+		&i.Instructions,
+		&i.MaxDurationSeconds,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateProject = `-- name: UpdateProject :one
+UPDATE projects SET name = $3, profile_id = $4, spec = $5, version = version + 1, updated_at = $6
+WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND ($7::bigint = 0 OR version = $7)
+RETURNING id, tenant_slug, tracker_adapter, tracker_key, name, profile_id, spec, version, created_at, updated_at, deleted_at
+`
+
+type UpdateProjectParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+	Name       string
+	ProfileID  uuid.UUID
+	Spec       []byte
+	UpdatedAt  time.Time
+	IfVersion  int64
+}
+
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, updateProject,
+		arg.TenantSlug,
+		arg.ID,
+		arg.Name,
+		arg.ProfileID,
+		arg.Spec,
+		arg.UpdatedAt,
+		arg.IfVersion,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.TrackerAdapter,
+		&i.TrackerKey,
+		&i.Name,
+		&i.ProfileID,
+		&i.Spec,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const updateRun = `-- name: UpdateRun :execrows
 UPDATE runs SET state = $2, repos = $3, branch = $4, prompt = $5, result = $6, pr_urls = $7,
                 session_id = $8, lease_owner = $9, lease_until = $10, updated_at = $11, kind = $12
@@ -526,4 +1166,43 @@ func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, er
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateTenant = `-- name: UpdateTenant :one
+UPDATE tenants SET display_name = $2, tracker_adapter = $3, code_host_adapter = $4,
+                   version = version + 1, updated_at = $5
+WHERE slug = $1 AND deleted_at IS NULL AND ($6::bigint = 0 OR version = $6)
+RETURNING slug, display_name, tracker_adapter, code_host_adapter, version, created_at, updated_at, deleted_at
+`
+
+type UpdateTenantParams struct {
+	Slug            string
+	DisplayName     string
+	TrackerAdapter  string
+	CodeHostAdapter string
+	UpdatedAt       time.Time
+	IfVersion       int64
+}
+
+func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, updateTenant,
+		arg.Slug,
+		arg.DisplayName,
+		arg.TrackerAdapter,
+		arg.CodeHostAdapter,
+		arg.UpdatedAt,
+		arg.IfVersion,
+	)
+	var i Tenant
+	err := row.Scan(
+		&i.Slug,
+		&i.DisplayName,
+		&i.TrackerAdapter,
+		&i.CodeHostAdapter,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }

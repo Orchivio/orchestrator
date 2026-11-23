@@ -1,7 +1,11 @@
-// Package config loads and validates the per-tenant GitOps configuration.
+// Package config holds the per-tenant runtime configuration and keeps it fresh from a Source.
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // Milestone values a project may report to the tracker.
 const (
@@ -15,16 +19,16 @@ const (
 type Config struct{ Tenants map[string]Tenant }
 
 type Tenant struct {
-	Name     string             `yaml:"tenant"`
-	Tracker  AdapterRef         `yaml:"tracker"`
-	CodeHost AdapterRef         `yaml:"codeHost"`
-	Profiles map[string]Profile `yaml:"-"` // decoded via fileDoc (duration parsing)
-	Projects []Project          `yaml:"projects"`
+	Name     string
+	Tracker  AdapterRef
+	CodeHost AdapterRef
+	Profiles map[string]Profile
+	Projects []Project
 }
 
 type AdapterRef struct {
-	Name    string `yaml:"name"`
-	Address string `yaml:"address"`
+	Name    string
+	Address string
 }
 
 type Profile struct {
@@ -35,36 +39,37 @@ type Profile struct {
 }
 
 type Project struct {
-	Name         string          `yaml:"name"`
-	TrackerKey   string          `yaml:"trackerKey"`
-	Profile      string          `yaml:"profile"`
-	Repos        []Repo          `yaml:"repos"`
-	Classifier   ClassifierRules `yaml:"classifier"`
-	Roles        Roles           `yaml:"roles"`
-	MaxDiffLines int             `yaml:"maxDiffLines"`
-	Milestones   []string        `yaml:"milestones"`
+	ID           uuid.UUID
+	Name         string
+	TrackerKey   string
+	Profile      string
+	Repos        []Repo
+	Classifier   ClassifierRules
+	Roles        Roles
+	MaxDiffLines int
+	Milestones   []string
 }
 
 // Repo.AllowedPaths are path prefixes ("" = everything). Users empty = all
 // users with the project role.
 type Repo struct {
-	Slug         string   `yaml:"slug"`
-	BaseBranch   string   `yaml:"baseBranch"`
-	AllowedPaths []string `yaml:"allowedPaths"`
-	Users        []string `yaml:"users"`
+	Slug         string   `json:"slug"`
+	BaseBranch   string   `json:"baseBranch"`
+	AllowedPaths []string `json:"allowedPaths"`
+	Users        []string `json:"users"`
 }
 
 type ClassifierRules struct {
-	TaskLabels     []string          `yaml:"taskLabels"`
-	QuestionLabels []string          `yaml:"questionLabels"`
-	RepoLabels     map[string]string `yaml:"repoLabels"`
-	DefaultRepo    string            `yaml:"defaultRepo"`
+	TaskLabels     []string          `json:"taskLabels"`
+	QuestionLabels []string          `json:"questionLabels"`
+	RepoLabels     map[string]string `json:"repoLabels"`
+	DefaultRepo    string            `json:"defaultRepo"`
 }
 
 // Roles lists e-mail addresses.
 type Roles struct {
-	Questions []string `yaml:"questions"`
-	Tasks     []string `yaml:"tasks"`
+	Questions []string `json:"questions"`
+	Tasks     []string `json:"tasks"`
 }
 
 // ProjectFor finds the project of a tenant by its tracker key.

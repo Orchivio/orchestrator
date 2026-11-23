@@ -3,8 +3,6 @@ package reporter
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,18 +12,19 @@ import (
 	"github.com/orchivio/orchestrator/internal/router"
 )
 
-const cfgYAML = `tenant: acme
-tracker: { name: linear, address: x }
-codeHost: { name: github, address: y }
-profiles:
-  default: { runtime: claude-code, model: m, maxDuration: 20m }
-projects:
-  - name: demo
-    trackerKey: ORC
-    profile: default
-    repos: [ { slug: a/b, baseBranch: main, allowedPaths: [""] } ]
-    milestones: [result]
-`
+func testConfig() *config.Config {
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "x"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "y"},
+		Profiles: map[string]config.Profile{"default": {Runtime: "claude-code", Model: "m", MaxDuration: 20 * time.Minute}},
+		Projects: []config.Project{{
+			Name: "demo", TrackerKey: "ORC", Profile: "default",
+			Repos:      []config.Repo{{Slug: "a/b", BaseBranch: "main", AllowedPaths: []string{""}}},
+			Milestones: []string{"result"},
+		}},
+	}}}
+}
 
 type fakeTracker struct{ refs, bodies []string }
 
@@ -36,11 +35,7 @@ func (f *fakeTracker) PostComment(_ context.Context, ref, body string) error {
 
 func newReporter(t *testing.T) (*Reporter, *fakeTracker) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(cfgYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sync, err := config.NewSync(dir, time.Hour, slog.New(slog.DiscardHandler))
+	sync, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

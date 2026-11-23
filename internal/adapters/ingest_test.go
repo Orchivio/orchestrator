@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -51,7 +52,7 @@ func (f *fakeTracker) StreamEvents(_ *pluginv1.StreamEventsRequest, s pluginv1.T
 }
 
 func TestIngestForwardsEventsAndReconnects(t *testing.T) {
-	cfg, err := config.NewSync("../../dev/config", time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func (*oldTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesReq
 
 func TestRegistryRefusesWrongContractVersion(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg, err := config.NewSync("../../dev/config", time.Hour, log)
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestRegistryRefusesWrongContractVersion(t *testing.T) {
 
 func TestIngestContinuesAfterHandlerError(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg, err := config.NewSync("../../dev/config", time.Hour, log)
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +168,237 @@ func TestIngestContinuesAfterHandlerError(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("timeout waiting for %s", want)
 		}
+	}
+}
+
+func testConfig() *config.Config {
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
+		Name:     "acme",
+		Tracker:  config.AdapterRef{Name: "linear", Address: "adapter-linear:7101"},
+		CodeHost: config.AdapterRef{Name: "github", Address: "adapter-github:7201"},
+		Projects: []config.Project{{Name: "demo", TrackerKey: "ORC", Milestones: config.DefaultMilestones()}},
+	}}}
+}
+
+// mutableSource is a config.Source whose config the test can swap.
+type mutableSource struct {
+	mu  sync.Mutex
+	cfg *config.Config
+}
+
+func (s *mutableSource) Load(context.Context) (*config.Config, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg, nil
+}
+
+func (s *mutableSource) set(c *config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg = c
+}
+
+type streamCall struct {
+	keys      []string
+	cancelled chan struct{}
+}
+
+// recordingTracker records each StreamEvents call and blocks until the
+// stream's ctx ends.
+type recordingTracker struct {
+	pluginv1.UnimplementedTrackerAdapterServer
+	mu    sync.Mutex
+	calls []*streamCall
+	event *pluginv1.TrackerEvent // sent on every stream when set
+}
+
+func (f *recordingTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
+	return &pluginv1.Capabilities{ContractVersion: "plugin.v1", AdapterName: "fake"}, nil
+}
+
+func (f *recordingTracker) StreamEvents(req *pluginv1.StreamEventsRequest, s pluginv1.TrackerAdapter_StreamEventsServer) error {
+	c := &streamCall{keys: req.GetProjectKeys(), cancelled: make(chan struct{})}
+	f.mu.Lock()
+	f.calls = append(f.calls, c)
+	f.mu.Unlock()
+	if f.event != nil {
+		if err := s.Send(f.event); err != nil {
+			return err
+		}
+	}
+	<-s.Context().Done()
+	close(c.cancelled)
+	return nil
+}
+
+func (f *recordingTracker) snapshot() []*streamCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*streamCall(nil), f.calls...)
+}
+
+func isClosed(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for !cond() {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %s", what)
+		case <-tick.C:
+		}
+	}
+}
+
+func tenantWith(keys ...string) *config.Config {
+	t := testConfig().Tenants["acme"]
+	t.Projects = nil
+	for _, k := range keys {
+		t.Projects = append(t.Projects, config.Project{Name: strings.ToLower(k), TrackerKey: k, Milestones: config.DefaultMilestones()})
+	}
+	return &config.Config{Tenants: map[string]config.Tenant{"acme": t}}
+}
+
+// startIngest runs the ingest supervisor against a recordingTracker and stops
+// it (waiting for Run to return) on cleanup.
+func startIngest(t *testing.T, initial *config.Config) (*mutableSource, *config.Sync, *recordingTracker) {
+	t.Helper()
+	return startIngestWith(t, initial, &recordingTracker{},
+		func(context.Context, string, *pluginv1.TrackerEvent) error { return nil })
+}
+
+func startIngestWith(t *testing.T, initial *config.Config, tr *recordingTracker,
+	handle func(context.Context, string, *pluginv1.TrackerEvent) error) (*mutableSource, *config.Sync, *recordingTracker) {
+	t.Helper()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	src := &mutableSource{cfg: initial}
+	cfg, err := config.NewSync(context.Background(), src, time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	pluginv1.RegisterTrackerAdapterServer(srv, tr)
+	go func() { _ = srv.Serve(lis) }()
+	reg := NewRegistry(cfg, log)
+	reg.dialer = func(string) (*grpc.ClientConn, error) {
+		return grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		run(ctx, cfg, reg, handle,
+			log, time.Millisecond, 10*time.Millisecond)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("ingest did not stop on cancel")
+		}
+		reg.Close()
+		srv.Stop()
+	})
+	return src, cfg, tr
+}
+
+func reload(t *testing.T, src *mutableSource, cfg *config.Sync, c *config.Config) {
+	t.Helper()
+	src.set(c)
+	if err := cfg.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIngestStartsStreamForTenantAddedAtRuntime(t *testing.T) {
+	src, cfg, tr := startIngest(t, nil)
+
+	reload(t, src, cfg, tenantWith("RES"))
+
+	eventually(t, "stream with [RES]", func() bool {
+		calls := tr.snapshot()
+		return len(calls) == 1 && slices.Equal(calls[0].keys, []string{"RES"})
+	})
+}
+
+func TestIngestRestartsStreamWhenKeysChange(t *testing.T) {
+	src, cfg, tr := startIngest(t, tenantWith("RES"))
+	eventually(t, "first stream", func() bool { return len(tr.snapshot()) == 1 })
+
+	reload(t, src, cfg, tenantWith("RES")) // unchanged content: no restart
+	reload(t, src, cfg, tenantWith("RES", "ORC"))
+
+	eventually(t, "second stream with [ORC RES]", func() bool {
+		calls := tr.snapshot()
+		return len(calls) == 2 && slices.Equal(calls[1].keys, []string{"ORC", "RES"})
+	})
+	eventually(t, "first stream cancelled", func() bool { return isClosed(tr.snapshot()[0].cancelled) })
+	if isClosed(tr.snapshot()[1].cancelled) {
+		t.Fatal("second stream cancelled")
+	}
+}
+
+func TestIngestStopsStreamOfRemovedTenant(t *testing.T) {
+	src, cfg, tr := startIngest(t, tenantWith("RES"))
+	eventually(t, "first stream", func() bool { return len(tr.snapshot()) == 1 })
+
+	reload(t, src, cfg, nil)
+
+	eventually(t, "stream cancelled", func() bool { return isClosed(tr.snapshot()[0].cancelled) })
+	if n := len(tr.snapshot()); n != 1 {
+		t.Fatalf("streams = %d, want 1", n)
+	}
+}
+
+func TestIngestSkipsTenantWithoutProjects(t *testing.T) {
+	src, cfg, tr := startIngest(t, tenantWith())
+
+	reload(t, src, cfg, tenantWith("RES"))
+
+	eventually(t, "stream with [RES]", func() bool { return len(tr.snapshot()) >= 1 })
+	if calls := tr.snapshot(); len(calls) != 1 || !slices.Equal(calls[0].keys, []string{"RES"}) {
+		t.Fatalf("calls = %d, first keys = %v; want exactly one stream with [RES]", len(calls), calls[0].keys)
+	}
+}
+
+func TestIngestHandlerKeepsLiveContextWhenKeysChange(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	handlerCtxErr := make(chan error, 1)
+	var once sync.Once
+	tr := &recordingTracker{event: &pluginv1.TrackerEvent{ExternalId: "e1"}}
+	src, cfg, _ := startIngestWith(t, tenantWith("RES"), tr,
+		func(ctx context.Context, _ string, _ *pluginv1.TrackerEvent) error {
+			first := false
+			once.Do(func() { first = true })
+			if !first { // event of the restarted stream
+				return nil
+			}
+			close(started)
+			<-release
+			handlerCtxErr <- ctx.Err()
+			return nil
+		})
+	<-started
+
+	reload(t, src, cfg, tenantWith("RES", "ORC")) // cancels the tenant's stream
+	eventually(t, "first stream cancelled", func() bool { return isClosed(tr.snapshot()[0].cancelled) })
+	close(release)
+
+	if err := <-handlerCtxErr; err != nil {
+		t.Fatalf("handler ctx was cancelled mid-event: %v", err)
 	}
 }

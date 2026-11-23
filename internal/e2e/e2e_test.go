@@ -5,11 +5,15 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,8 +30,10 @@ import (
 	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 	workerv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/worker/v1"
 	"github.com/orchivio/orchestrator/internal/adapters"
+	"github.com/orchivio/orchestrator/internal/admin"
 	"github.com/orchivio/orchestrator/internal/config"
 	"github.com/orchivio/orchestrator/internal/grpcapi"
+	"github.com/orchivio/orchestrator/internal/httpapi"
 	"github.com/orchivio/orchestrator/internal/orchestrator"
 	"github.com/orchivio/orchestrator/internal/reporter"
 	"github.com/orchivio/orchestrator/internal/router"
@@ -42,42 +48,45 @@ const (
 	waitMax   = 5 * time.Second
 )
 
-const configYAML = `tenant: acme
-tracker: { name: linear, address: tracker }
-codeHost: { name: github, address: codehost }
-profiles:
-  default: { runtime: claude-code, model: m, maxDuration: 20m }
-projects:
-  - name: demo
-    trackerKey: ORC
-    profile: default
-    repos:
-      - { slug: acme/playground, baseBranch: main, allowedPaths: [""] }
-    classifier:
-      taskLabels: ["orchivio:aufgabe"]
-      questionLabels: ["orchivio:frage"]
-      defaultRepo: acme/playground
-    roles: { questions: ["dev@example.com"], tasks: ["dev@example.com"] }
-    maxDiffLines: 500
-`
-
 type fakeTracker struct {
 	pluginv1.UnimplementedTrackerAdapterServer
-	events   chan *pluginv1.TrackerEvent
 	mu       sync.Mutex
+	streams  map[chan *pluginv1.TrackerEvent][]string // open streams -> watched project keys
 	comments []string
+}
+
+// emit delivers ev to every open stream watching its project key and reports whether one did.
+func (f *fakeTracker) emit(ev *pluginv1.TrackerEvent) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delivered := false
+	for ch, keys := range f.streams {
+		if slices.Contains(keys, ev.GetProjectKey()) {
+			select { // never block under the mutex; a full stream counts as not delivered and the caller retries
+			case ch <- ev:
+				delivered = true
+			default:
+			}
+		}
+	}
+	return delivered
 }
 
 func (f *fakeTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
 	return &pluginv1.Capabilities{ContractVersion: "plugin.v1", AdapterName: "fake-tracker"}, nil
 }
 
-func (f *fakeTracker) StreamEvents(_ *pluginv1.StreamEventsRequest, s grpc.ServerStreamingServer[pluginv1.TrackerEvent]) error {
+func (f *fakeTracker) StreamEvents(req *pluginv1.StreamEventsRequest, s grpc.ServerStreamingServer[pluginv1.TrackerEvent]) error {
+	events := make(chan *pluginv1.TrackerEvent, 8)
+	f.mu.Lock()
+	f.streams[events] = req.GetProjectKeys()
+	f.mu.Unlock()
+	defer func() { f.mu.Lock(); delete(f.streams, events); f.mu.Unlock() }()
 	for {
 		select {
 		case <-s.Context().Done():
 			return nil
-		case ev := <-f.events:
+		case ev := <-events:
 			if err := s.Send(ev); err != nil {
 				return err
 			}
@@ -190,6 +199,9 @@ type env struct {
 	codeHost *fakeCodeHost
 	db       *store.Store
 	worker   workerv1.WorkerServiceClient
+	admin    *httptest.Server
+	token    string
+	t        *testing.T
 }
 
 func setup(t *testing.T) *env {
@@ -198,21 +210,25 @@ func setup(t *testing.T) *env {
 	t.Cleanup(cancel)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "acme.yaml"), []byte(configYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.NewSync(dir, time.Hour, log)
-	if err != nil {
-		t.Fatal(err)
-	}
 	db, err := store.Open(ctx, startPostgres(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(db.Close)
+	svc := admin.NewService(db, map[string]string{"linear": "tracker", "github": "codehost"}, time.Now, uuid.New, log)
+	token := "orv_" + strings.ReplaceAll(uuid.NewString(), "-", "") + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if ok, err := svc.Bootstrap(ctx, token); err != nil || !ok {
+		t.Fatalf("bootstrap ok=%v err=%v", ok, err)
+	}
+	cfg, err := config.NewSync(ctx, svc, time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.OnChange(cfg.Reload)
+	api := httptest.NewServer(httpapi.NewAdmin(svc, log))
+	t.Cleanup(api.Close)
 
-	ft := &fakeTracker{events: make(chan *pluginv1.TrackerEvent, 8)}
+	ft := &fakeTracker{streams: map[chan *pluginv1.TrackerEvent][]string{}}
 	fc := &fakeCodeHost{}
 	lisT := serve(t, func(s *grpc.Server) { pluginv1.RegisterTrackerAdapterServer(s, ft) })
 	lisC := serve(t, func(s *grpc.Server) { pluginv1.RegisterCodeHostAdapterServer(s, fc) })
@@ -234,14 +250,73 @@ func setup(t *testing.T) *env {
 	go func() { defer close(done); adapters.Run(ctx, cfg, reg, rt.Handle, log) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	return &env{tracker: ft, codeHost: fc, db: db, worker: workerv1.NewWorkerServiceClient(dial(t, lisW))}
+	return &env{tracker: ft, codeHost: fc, db: db, worker: workerv1.NewWorkerServiceClient(dial(t, lisW)), admin: api, token: token, t: t}
 }
 
 func (e *env) send(kind pluginv1.TrackerEvent_Kind, ref, body string, mention bool) {
-	e.tracker.events <- &pluginv1.TrackerEvent{
-		ExternalId: uuid.NewString(), Kind: kind, TicketRef: ref, ProjectKey: "ORC",
+	e.sendTo("ORC", kind, ref, body, mention)
+}
+
+// sendTo waits until a stream watches key, then delivers the event.
+func (e *env) sendTo(key string, kind pluginv1.TrackerEvent_Kind, ref, body string, mention bool) {
+	ev := &pluginv1.TrackerEvent{
+		ExternalId: uuid.NewString(), Kind: kind, TicketRef: ref, ProjectKey: key,
 		Actor: &pluginv1.Actor{Id: "u1", Email: userEmail}, Body: body, MentionsBot: mention,
 	}
+	eventually(e.t, "stream for project "+key, func() bool { return e.tracker.emit(ev) })
+}
+
+// post sends a JSON request to the admin API and decodes a 2xx response into out (if non-nil).
+func (e *env) post(path string, in, out any) int {
+	e.t.Helper()
+	body, err := json.Marshal(in)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, e.admin.URL+path, bytes.NewReader(body))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+e.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if out != nil && resp.StatusCode/100 == 2 {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			e.t.Fatal(err)
+		}
+	}
+	return resp.StatusCode
+}
+
+func (e *env) mustPost(path string, in, out any) {
+	e.t.Helper()
+	if code := e.post(path, in, out); code != http.StatusCreated {
+		e.t.Fatalf("POST %s = %d, want 201", path, code)
+	}
+}
+
+// provision creates tenant acme (once per env), profile default and a project for trackerKey.
+func (e *env) provision(trackerKey string) {
+	e.t.Helper()
+	var profile struct {
+		ID string `json:"id"`
+	}
+	slug := "acme"
+	e.mustPost("/api/v1/tenants", map[string]any{"slug": slug, "displayName": "Acme",
+		"trackerAdapter": "linear", "codeHostAdapter": "github"}, nil)
+	e.mustPost("/api/v1/tenants/"+slug+"/profiles", map[string]any{"name": "default", "runtime": "claude-code",
+		"model": "m", "maxDuration": "20m"}, &profile)
+	e.mustPost("/api/v1/tenants/"+slug+"/projects", map[string]any{
+		"name": "demo", "trackerKey": trackerKey, "profileId": profile.ID,
+		"repos":        []config.Repo{{Slug: repoSlug, BaseBranch: "main", AllowedPaths: []string{""}}},
+		"classifier":   config.ClassifierRules{TaskLabels: []string{"orchivio:aufgabe"}, QuestionLabels: []string{"orchivio:frage"}, DefaultRepo: repoSlug},
+		"roles":        config.Roles{Questions: []string{userEmail}, Tasks: []string{userEmail}},
+		"maxDiffLines": 500,
+	}, nil)
 }
 
 func (e *env) lease(t *testing.T) *workerv1.RunAssignment {
@@ -290,8 +365,34 @@ func hasComment(e *env, ref, substr string) func() bool {
 	}
 }
 
+func TestServerStartsEmptyAndAcceptsBootstrapToken(t *testing.T) {
+	e := setup(t)
+	req, _ := http.NewRequest(http.MethodGet, e.admin.URL+"/api/v1/tenants", nil)
+	req.Header.Set("Authorization", "Bearer "+e.token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got []any
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil || resp.StatusCode != http.StatusOK || len(got) != 0 {
+		t.Fatalf("status=%d tenants=%v err=%v, want 200 []", resp.StatusCode, got, err)
+	}
+}
+
+func TestProjectAddedAtRuntimeReceivesEvents(t *testing.T) {
+	e := setup(t)
+	e.provision("RES")
+	e.sendTo("RES", pluginv1.TrackerEvent_ASSIGNED, "RES-1", "", false)
+	a := e.lease(t)
+	if a.GetKind() != "task" || !strings.Contains(a.GetBranch(), "res-1") {
+		t.Fatalf("kind=%q branch=%q, want task on res-1", a.GetKind(), a.GetBranch())
+	}
+}
+
 func TestEndToEndWithFakes(t *testing.T) {
 	e := setup(t)
+	e.provision("ORC")
 
 	t.Run("question gets an answer comment with timeline link", func(t *testing.T) {
 		e.send(pluginv1.TrackerEvent_COMMENTED, "ORC-1", "@Orchivio Was steht in der README?", true)

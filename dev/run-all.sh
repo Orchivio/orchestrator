@@ -17,7 +17,7 @@ if [[ -n "${LINEAR_CLIENT_ID:-}" ]]; then
 else
   linear_vars="LINEAR_API_KEY_REF"
 fi
-for v in $linear_vars LINEAR_TEAM_KEYS GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF; do
+for v in $linear_vars ORCHIVIO_BOOTSTRAP_TOKEN GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF; do
   [[ -n "${!v:-}" ]] || missing+=("$v")
 done
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
@@ -41,5 +41,6 @@ if [[ "${ORCHIVIO_PULL:-always}" != never ]]; then
   "${compose[@]}" pull --quiet
 fi
 "${compose[@]}" up -d
+"$here/seed.sh"
 echo "Orchivio läuft (${ORCHIVIO_VERSION:-main}). Timeline: http://localhost:8088/runs/<id>"
 echo "Logs: podman compose -f dev/compose.yaml logs -f   Stoppen: dev/stop-all.sh"

@@ -21,14 +21,13 @@ services:
     image: ghcr.io/orchivio/orchestrator:${ORCHIVIO_VERSION:-main}
     environment:
       DATABASE_URL: postgres://orchivio:orchivio@postgres:5432/orchivio?sslmode=disable
-      ORCHIVIO_CONFIG_DIR: /config
+      ORCHIVIO_ADAPTERS: linear=adapter-linear:7101,github=adapter-github:7201
+      ORCHIVIO_BOOTSTRAP_TOKEN: ${ORCHIVIO_BOOTSTRAP_TOKEN:-}
       ORCHIVIO_GRPC_ADDR: 0.0.0.0:7070
       ORCHIVIO_HTTP_ADDR: 0.0.0.0:8088
       ORCHIVIO_PUBLIC_URL: http://localhost:8088
-    volumes:
-      - ./config:/config:ro
     ports:
-      - "127.0.0.1:8088:8088" # timeline only; gRPC stays inside the stack
+      - "127.0.0.1:8088:8088" # timeline and admin API (plain HTTP, localhost only); gRPC stays inside the stack
     depends_on:
       postgres: { condition: service_healthy }
       adapter-linear: { condition: service_started }
@@ -42,7 +41,6 @@ services:
       LINEAR_CLIENT_SECRET_REF: ${LINEAR_CLIENT_SECRET_REF:-}
       LINEAR_TOKEN_ACME: ${LINEAR_TOKEN_ACME:-}
       LINEAR_API_KEY_REF: ${LINEAR_API_KEY_REF:-}
-      LINEAR_TEAM_KEYS: ${LINEAR_TEAM_KEYS}
       LINEAR_POLL_INTERVAL: ${LINEAR_POLL_INTERVAL:-10s}
       ORCHIVIO_GRPC_ADDR: 0.0.0.0:7101
 

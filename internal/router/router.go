@@ -149,7 +149,7 @@ func (r *Router) start(ctx context.Context, tn config.Tenant, p config.Project, 
 	if run == nil {
 		now := r.now()
 		run = &Run{ID: r.newID(), Tenant: conv.Tenant, ConversationID: conv.ID, Project: p.TrackerKey,
-			TicketRef: conv.TicketRef, State: StateClassifying, CreatedAt: now, UpdatedAt: now}
+			ProjectID: p.ID, TicketRef: conv.TicketRef, State: StateClassifying, CreatedAt: now, UpdatedAt: now}
 		if err := r.store.CreateRun(ctx, *run); err != nil {
 			return fmt.Errorf("create run %s: %w", conv.TicketRef, err)
 		}
