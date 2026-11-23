@@ -13,7 +13,9 @@ service TrackerAdapter {
   rpc PostComment(PostCommentRequest) returns (PostCommentResponse);
 }
 
-message StreamEventsRequest {}
+message StreamEventsRequest {
+  repeated string project_keys = 1; // tracker keys (Linear team keys) to watch; empty = invalid
+}
 
 message TrackerEvent {
   string external_id = 1; // dedup key, stable across polls
