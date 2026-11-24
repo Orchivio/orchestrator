@@ -301,3 +301,58 @@ func TestReplaceTrackerConnectionIsAllOrNothing(t *testing.T) {
 		t.Fatalf("reconnect same workspace: %+v %v", again, err)
 	}
 }
+
+func TestUpdateConnectionCredentialIfSkipsRowChangedSinceClaim(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	a := newTenant(t, s)
+	c := connIn(a.Slug, admin.KindTracker, "linear", uuid.NewString())
+	saved, err := s.SaveConnection(ctx, c, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := base.Add(-time.Hour)
+	if err = s.UpdateConnectionCredential(ctx, saved.ID, cred, &past, admin.StatusActive); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.GetConnection(ctx, a.Slug, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := claimOne(t, s, saved.ID)
+	if !claimed.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("claim moved updated_at from %v to %v", before.UpdatedAt, claimed.UpdatedAt)
+	}
+	reconnected := admin.SealedCredential{KeyID: "k1", Data: []byte("reconnected")}
+	if _, err = s.SaveConnection(ctx, c, reconnected); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := s.UpdateConnectionCredentialIf(ctx, saved.ID, claimed.UpdatedAt, admin.SealedCredential{KeyID: "k1", Data: []byte("stale")}, nil, admin.StatusNeedsReauth)
+
+	got, _ := s.ConnectionCredential(ctx, saved.ID)
+	now, _ := s.GetConnection(ctx, a.Slug, saved.ID)
+	if err != nil || ok || string(got.Data) != "reconnected" || now.Status != admin.StatusActive {
+		t.Fatalf("ok=%v err=%v cred=%q status=%s", ok, err, got.Data, now.Status)
+	}
+	ok, err = s.UpdateConnectionCredentialIf(ctx, saved.ID, now.UpdatedAt, admin.SealedCredential{KeyID: "k1", Data: []byte("fresh")}, nil, admin.StatusActive)
+	got, _ = s.ConnectionCredential(ctx, saved.ID)
+	if err != nil || !ok || string(got.Data) != "fresh" {
+		t.Fatalf("current version: ok=%v err=%v cred=%q", ok, err, got.Data)
+	}
+}
+
+// claimOne claims due connections and returns the one with id.
+func claimOne(t *testing.T, s *Store, id uuid.UUID) admin.Connection {
+	t.Helper()
+	conns, _, err := s.ClaimDueConnections(context.Background(), base, base.Add(5*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range conns {
+		if c.ID == id {
+			return c
+		}
+	}
+	t.Fatalf("connection %s not claimed", id)
+	return admin.Connection{}
+}

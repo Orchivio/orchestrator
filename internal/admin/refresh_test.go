@@ -113,3 +113,44 @@ func TestRefreshDueSkipsConnectionsNotDue(t *testing.T) {
 		t.Fatalf("refreshed %d, changes %d", len(e.conn.refreshedWith), *changes)
 	}
 }
+
+func TestRefreshKeepsCredentialOfReconnectDuringRefresh(t *testing.T) {
+	e := newConnEnv(t)
+	c := e.dueConnection(t, "linear", "ws1")
+	e.conn.refreshErr = fmt.Errorf("refresh credential at linear: %w", admin.ErrCredentialRejected)
+	e.conn.onRefresh = func() { // the admin reconnects while the old token is being refreshed
+		e.conn.onRefresh = nil
+		if _, err := e.svc.Authorize(ctx, "acme", "linear"); err != nil {
+			t.Error(err)
+		}
+		e.conn.completed = admin.Completed{Data: []byte("plain-reconnected"), Label: "WS1", ExternalID: "ws1"}
+		if _, err := e.svc.Callback(ctx, "linear", map[string]string{"state": e.conn.state}); err != nil {
+			t.Error(err)
+		}
+	}
+
+	if err := e.svc.RefreshDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	mc := e.store.conns[c.ID]
+	plain, err := e.box.Open(mc.cred.KeyID, mc.cred.Data)
+	if err != nil || string(plain) != "plain-reconnected" || mc.c.Status != admin.StatusActive {
+		t.Fatalf("plain=%q err=%v status=%s", plain, err, mc.c.Status)
+	}
+}
+
+func TestRefreshGivesUpOnHangingAdapter(t *testing.T) {
+	e := newConnEnv(t)
+	c := e.dueConnection(t, "linear", "ws1")
+	admin.SetTimeouts(e.svc, 10*time.Millisecond, time.Minute)
+	e.conn.block = true
+
+	if err := e.svc.RefreshDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if mc := e.store.conns[c.ID]; mc.c.Status != admin.StatusActive || !strings.Contains(e.logs.String(), "deadline exceeded") {
+		t.Fatalf("status=%s logs=%s", mc.c.Status, e.logs)
+	}
+}

@@ -182,6 +182,11 @@ WHERE tenant_slug = sqlc.arg(tenant_slug) AND kind = 'tracker' AND deleted_at IS
 UPDATE connections SET key_id = $2, credential = $3, refresh_after = $4, status = $5, updated_at = $6
 WHERE id = $1 AND deleted_at IS NULL;
 
+-- Only if the row is unchanged since it was read (a claim does not touch updated_at, a reconnect does).
+-- name: UpdateConnectionCredentialIf :execrows
+UPDATE connections SET key_id = $3, credential = $4, refresh_after = $5, status = $6, updated_at = $7
+WHERE id = $1 AND updated_at = $2 AND deleted_at IS NULL;
+
 -- name: DeleteConnection :execrows
 UPDATE connections SET deleted_at = $3, updated_at = $3 WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL;
 

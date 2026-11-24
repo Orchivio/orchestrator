@@ -32,13 +32,16 @@ type Service struct {
 	newID     func() uuid.UUID
 	log       *slog.Logger
 	onChange  func(context.Context) error
+
+	refreshTimeout, checkTimeout time.Duration // per adapter call
 }
 
 // NewService builds the service. box and conn may be nil; connection
 // operations then fail with ErrUnavailable.
 func NewService(st Store, adapters map[string]string, box *secretbox.Box, conn Connector, publicURL string,
 	now func() time.Time, newID func() uuid.UUID, log *slog.Logger) *Service {
-	return &Service{store: st, adapters: adapters, box: box, connector: conn, publicURL: publicURL, now: now, newID: newID, log: log}
+	return &Service{store: st, adapters: adapters, box: box, connector: conn, publicURL: publicURL, now: now, newID: newID, log: log,
+		refreshTimeout: refreshTimeout, checkTimeout: checkTimeout}
 }
 
 // OnChange registers a hook run after every successful write. Its error is

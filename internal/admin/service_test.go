@@ -553,7 +553,7 @@ func (m *memStore) saveConnection(c admin.Connection, cred admin.SealedCredentia
 			if mc.c.TenantSlug != c.TenantSlug {
 				return admin.Connection{}, admin.ErrConflict
 			}
-			mc.c.Label, mc.c.Status, mc.c.RefreshAfter, mc.cred = c.Label, c.Status, c.RefreshAfter, cred
+			mc.c.Label, mc.c.Status, mc.c.RefreshAfter, mc.cred, mc.c.UpdatedAt = c.Label, c.Status, c.RefreshAfter, cred, time.Now()
 			return mc.c, nil
 		}
 		if c.Kind == admin.KindTracker && mc.c.Kind == admin.KindTracker && mc.c.TenantSlug == c.TenantSlug {
@@ -561,6 +561,7 @@ func (m *memStore) saveConnection(c admin.Connection, cred admin.SealedCredentia
 		}
 	}
 	c.CreatedAt = time.Now()
+	c.UpdatedAt = c.CreatedAt
 	m.conns[c.ID] = &memConn{c: c, cred: cred}
 	return c, nil
 }
@@ -572,8 +573,20 @@ func (m *memStore) UpdateConnectionCredential(_ context.Context, id uuid.UUID, c
 	if !ok || mc.dead {
 		return admin.ErrNotFound
 	}
-	mc.cred, mc.c.RefreshAfter, mc.c.Status = cred, refreshAfter, status
+	mc.cred, mc.c.RefreshAfter, mc.c.Status, mc.c.UpdatedAt = cred, refreshAfter, status, time.Now()
 	return nil
+}
+
+// UpdateConnectionCredentialIf writes only if the row's UpdatedAt is still expected.
+func (m *memStore) UpdateConnectionCredentialIf(_ context.Context, id uuid.UUID, expected time.Time, cred admin.SealedCredential, refreshAfter *time.Time, status string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mc, ok := m.conns[id]
+	if !ok || mc.dead || !mc.c.UpdatedAt.Equal(expected) {
+		return false, nil
+	}
+	mc.cred, mc.c.RefreshAfter, mc.c.Status, mc.c.UpdatedAt = cred, refreshAfter, status, time.Now()
+	return true, nil
 }
 
 func (m *memStore) DeleteConnection(_ context.Context, tenant string, id uuid.UUID) error {
@@ -723,5 +736,23 @@ func TestCodeHostAdapterChangeBlockedByConnections(t *testing.T) {
 	}
 	if _, err := e.svc.UpdateTenant(ctx, change, 0); err != nil {
 		t.Fatalf("without connection: %v", err)
+	}
+}
+
+func TestProjectValidationGivesUpOnHangingAdapter(t *testing.T) {
+	e := newConnEnv(t)
+	for _, a := range []string{"linear", "github"} {
+		if _, err := e.connect(t, a, a+"-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin.SetTimeouts(e.svc, time.Minute, 10*time.Millisecond)
+	e.conn.block = true
+
+	if _, err := e.svc.CreateProject(ctx, validProject(e)); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v", err)
+	}
+	if ps, _ := e.svc.ListProjects(ctx, "acme"); len(ps) != 0 {
+		t.Fatalf("projects = %+v", ps)
 	}
 }

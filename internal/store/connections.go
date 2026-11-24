@@ -84,6 +84,13 @@ func (s *Store) UpdateConnectionCredential(ctx context.Context, id uuid.UUID, cr
 	return err
 }
 
+func (s *Store) UpdateConnectionCredentialIf(ctx context.Context, id uuid.UUID, expectedUpdatedAt time.Time, cred admin.SealedCredential,
+	refreshAfter *time.Time, status string) (bool, error) {
+	n, err := s.q.UpdateConnectionCredentialIf(ctx, db.UpdateConnectionCredentialIfParams{ID: id, UpdatedAt: expectedUpdatedAt,
+		KeyID: cred.KeyID, Credential: cred.Data, RefreshAfter: refreshAfter, Status: status, UpdatedAt_2: s.now()})
+	return n == 1, err
+}
+
 func (s *Store) DeleteConnection(ctx context.Context, tenant string, id uuid.UUID) error {
 	now := s.now()
 	n, err := s.q.DeleteConnection(ctx, db.DeleteConnectionParams{TenantSlug: tenant, ID: id, DeletedAt: &now})

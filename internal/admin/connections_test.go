@@ -31,6 +31,8 @@ type fakeConnector struct {
 	refreshed             admin.Completed
 	refreshErr            error
 	refreshedWith         [][]byte
+	onRefresh             func()          // runs before Refresh answers, without the lock
+	block                 bool            // Refresh and CheckAccess wait for ctx to end
 	denied                map[string]bool // items CheckAccess denies
 	checkErr              error
 	checks                []checkCall
@@ -57,7 +59,14 @@ func (f *fakeConnector) CompleteConnect(_ context.Context, adapter, kind, redire
 	return f.completed, f.completeErr
 }
 
-func (f *fakeConnector) Refresh(_ context.Context, _, _ string, data []byte, _ *time.Time) (admin.Completed, error) {
+func (f *fakeConnector) Refresh(ctx context.Context, _, _ string, data []byte, _ *time.Time) (admin.Completed, error) {
+	if f.onRefresh != nil {
+		f.onRefresh()
+	}
+	if f.block {
+		<-ctx.Done()
+		return admin.Completed{}, ctx.Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.refreshedWith = append(f.refreshedWith, data)
@@ -71,7 +80,11 @@ func (f *fakeConnector) Disconnect(_ context.Context, adapter, kind string, data
 	return errors.New("provider down") // best effort: must not block the delete
 }
 
-func (f *fakeConnector) CheckAccess(_ context.Context, adapter, kind string, creds [][]byte, items []string) ([]string, error) {
+func (f *fakeConnector) CheckAccess(ctx context.Context, adapter, kind string, creds [][]byte, items []string) ([]string, error) {
+	if f.block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	call := checkCall{adapter: adapter, kind: kind, items: items}

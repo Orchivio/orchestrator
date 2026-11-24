@@ -55,7 +55,9 @@ func (s *Service) checkAccess(ctx context.Context, adapter, kind string, creds [
 	if len(creds) == 0 {
 		return []config.FieldError{{Field: missingField, Message: msgNotConnected}}, nil
 	}
-	denied, err := s.connector.CheckAccess(ctx, adapter, kind, creds, items)
+	callCtx, cancel := context.WithTimeout(ctx, s.checkTimeout)
+	defer cancel()
+	denied, err := s.connector.CheckAccess(callCtx, adapter, kind, creds, items)
 	if err != nil {
 		return nil, fmt.Errorf("check access at %s: %w", adapter, err)
 	}

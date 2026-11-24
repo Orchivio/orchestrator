@@ -1388,6 +1388,38 @@ func (q *Queries) UpdateConnectionCredential(ctx context.Context, arg UpdateConn
 	return result.RowsAffected(), nil
 }
 
+const updateConnectionCredentialIf = `-- name: UpdateConnectionCredentialIf :execrows
+UPDATE connections SET key_id = $3, credential = $4, refresh_after = $5, status = $6, updated_at = $7
+WHERE id = $1 AND updated_at = $2 AND deleted_at IS NULL
+`
+
+type UpdateConnectionCredentialIfParams struct {
+	ID           uuid.UUID
+	UpdatedAt    time.Time
+	KeyID        string
+	Credential   []byte
+	RefreshAfter *time.Time
+	Status       string
+	UpdatedAt_2  time.Time
+}
+
+// Only if the row is unchanged since it was read (a claim does not touch updated_at, a reconnect does).
+func (q *Queries) UpdateConnectionCredentialIf(ctx context.Context, arg UpdateConnectionCredentialIfParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateConnectionCredentialIf,
+		arg.ID,
+		arg.UpdatedAt,
+		arg.KeyID,
+		arg.Credential,
+		arg.RefreshAfter,
+		arg.Status,
+		arg.UpdatedAt_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateProfile = `-- name: UpdateProfile :one
 UPDATE profiles SET name = $3, runtime = $4, model = $5, instructions = $6, max_duration_seconds = $7,
                     version = version + 1, updated_at = $8
