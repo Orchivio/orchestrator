@@ -47,6 +47,7 @@ var (
 	ErrInUse           = errors.New("in use")           // 409: active runs, or profile referenced
 	ErrVersionMismatch = errors.New("version mismatch") // 412
 	ErrTaken           = errors.New("already taken")    // store: slug or tracker key ever used
+	ErrConflict        = errors.New("conflict")         // 409: external id connected to another tenant
 )
 
 // ValidationError is the 422 case; Fields names every invalid field.
@@ -75,6 +76,28 @@ type Token struct {
 	RevokedAt                             *time.Time
 }
 
+const (
+	KindTracker       = "tracker"
+	KindCodeHost      = "codehost"
+	StatusActive      = "active"
+	StatusNeedsReauth = "needs_reauth"
+)
+
+// Connection is a tenant's link to an external workspace or installation.
+// The credential is stored apart and only ever as ciphertext.
+type Connection struct {
+	ID                                                   uuid.UUID
+	TenantSlug, Kind, Adapter, ExternalID, Label, Status string
+	RefreshAfter                                         *time.Time
+	CreatedAt, UpdatedAt                                 time.Time
+}
+
+// SealedCredential is an encrypted credential and the id of the key that sealed it.
+type SealedCredential struct {
+	KeyID string
+	Data  []byte
+}
+
 var ErrUnauthorized = errors.New("unauthorized")
 
 // Store persists the admin domain. ifVersion 0 = no precondition. Deletes are
@@ -100,4 +123,21 @@ type Store interface {
 	RevokeToken(ctx context.Context, id uuid.UUID) error         // ErrNotFound
 	TokenByHash(ctx context.Context, hash []byte) (Token, error) // ErrNotFound
 	CountTokens(ctx context.Context) (int, error)                // all rows, revoked/expired included
+
+	ListConnections(ctx context.Context, tenant string) ([]Connection, error)               // live only
+	ListAllActiveConnections(ctx context.Context) ([]Connection, []SealedCredential, error) // live + active
+	GetConnection(ctx context.Context, tenant string, id uuid.UUID) (Connection, error)
+	ConnectionCredential(ctx context.Context, id uuid.UUID) (SealedCredential, error)
+	// SaveConnection inserts, or reconnects the tenant's live row with the same
+	// (adapter, external id). ErrConflict if another tenant holds that external id;
+	// ErrTaken if the tenant already has a live tracker connection.
+	SaveConnection(ctx context.Context, c Connection, cred SealedCredential) (Connection, error)
+	UpdateConnectionCredential(ctx context.Context, id uuid.UUID, cred SealedCredential, refreshAfter *time.Time, status string) error
+	DeleteConnection(ctx context.Context, tenant string, id uuid.UUID) error // soft
+	// ClaimDueConnections returns live, active rows with refresh_after <= now and
+	// moves their refresh_after to leaseUntil so a second claim skips them.
+	ClaimDueConnections(ctx context.Context, now, leaseUntil time.Time) ([]Connection, []SealedCredential, error)
+	CreateOAuthState(ctx context.Context, hash []byte, tenant, adapter, kind string, expiresAt time.Time) error
+	// ConsumeOAuthState is single use; unknown, used or expired is ErrNotFound.
+	ConsumeOAuthState(ctx context.Context, hash []byte, now time.Time) (tenant, adapter, kind string, err error)
 }

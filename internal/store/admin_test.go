@@ -66,22 +66,19 @@ func TestTenantSlugNeverReused(t *testing.T) {
 	}
 }
 
-func TestTrackerKeyUniquePerAdapter(t *testing.T) {
+func TestTrackerKeyNeverReusedInTenant(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
-	a, b := newTenant(t, s), newTenant(t, s)
+	a := newTenant(t, s)
+	profile := newProfile(t, s, a.Slug)
 	key := "RES-" + uuid.NewString()
-	first, err := s.CreateProject(ctx, projectIn(a.Slug, newProfile(t, s, a.Slug).ID, key), "linear")
+	first, err := s.CreateProject(ctx, projectIn(a.Slug, profile.ID, key), "linear")
 	if err != nil {
 		t.Fatal(err)
-	}
-	other := projectIn(b.Slug, newProfile(t, s, b.Slug).ID, key)
-	if _, err = s.CreateProject(ctx, other, "linear"); !errors.Is(err, admin.ErrTaken) {
-		t.Fatalf("err = %v", err)
 	}
 	if err = s.DeleteProject(ctx, a.Slug, first.ID, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.CreateProject(ctx, other, "linear"); !errors.Is(err, admin.ErrTaken) {
+	if _, err = s.CreateProject(ctx, projectIn(a.Slug, profile.ID, key), "linear"); !errors.Is(err, admin.ErrTaken) {
 		t.Fatalf("after delete err = %v", err)
 	}
 }

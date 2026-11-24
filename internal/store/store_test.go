@@ -70,11 +70,11 @@ func newRun(t *testing.T, s *Store, c router.Conversation, state string, created
 
 func TestMarkInboundIsIdempotent(t *testing.T) {
 	s, ctx, id := newStore(t), context.Background(), uuid.NewString()
-	first, err := s.MarkInbound(ctx, "linear", id)
+	first, err := s.MarkInbound(ctx, "t", "linear", id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.MarkInbound(ctx, "linear", id)
+	second, err := s.MarkInbound(ctx, "t", "linear", id)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,11 +29,14 @@ type memStore struct {
 	adapter  map[uuid.UUID]string
 	tokens   []admin.Token // insertion order
 	hashes   map[string]uuid.UUID
+	conns    map[uuid.UUID]*memConn
+	states   map[string]*memState
 }
 
 func newMemStore() *memStore {
 	return &memStore{tenants: map[string]admin.Tenant{}, deleted: map[string]bool{}, profiles: map[uuid.UUID]admin.Profile{},
-		projects: map[uuid.UUID]admin.Project{}, keys: map[string]bool{}, adapter: map[uuid.UUID]string{}, hashes: map[string]uuid.UUID{}}
+		projects: map[uuid.UUID]admin.Project{}, keys: map[string]bool{}, adapter: map[uuid.UUID]string{}, hashes: map[string]uuid.UUID{},
+		conns: map[uuid.UUID]*memConn{}, states: map[string]*memState{}}
 }
 
 func (m *memStore) ListTenants(context.Context) ([]admin.Tenant, error) {
@@ -162,7 +165,7 @@ func (m *memStore) GetProject(_ context.Context, tenant string, id uuid.UUID) (a
 	return p, nil
 }
 func (m *memStore) CreateProject(_ context.Context, p admin.Project, trackerAdapter string) (admin.Project, error) {
-	k := trackerAdapter + "/" + p.TrackerKey
+	k := p.TenantSlug + "/" + p.TrackerKey
 	if m.keys[k] {
 		return admin.Project{}, admin.ErrTaken
 	}
@@ -278,14 +281,7 @@ func TestTakenTrackerKeyIsValidationError(t *testing.T) {
 	if _, err := svc.CreateProject(ctx, admin.Project{TenantSlug: "acme", Name: "Res", TrackerKey: "RES", ProfileID: prof.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateTenant(ctx, admin.Tenant{Slug: "beta", TrackerAdapter: "linear", CodeHostAdapter: "github"}); err != nil {
-		t.Fatal(err)
-	}
-	p2, err := svc.CreateProfile(ctx, admin.Profile{TenantSlug: "beta", Name: "default", Runtime: "podman", MaxDuration: time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = svc.CreateProject(ctx, admin.Project{TenantSlug: "beta", Name: "Res", TrackerKey: "RES", ProfileID: p2.ID})
+	_, err := svc.CreateProject(ctx, admin.Project{TenantSlug: "acme", Name: "Res2", TrackerKey: "RES", ProfileID: prof.ID})
 	var ve *admin.ValidationError
 	if !errors.As(err, &ve) || fieldMessage(ve, "trackerKey") != "already taken" {
 		t.Fatalf("err = %v", err)
@@ -433,4 +429,146 @@ func TestValidateTenantReportsAdapterFieldsInFixedOrder(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	}
+}
+
+// Connections: live rows only; (adapter, external id) exclusive, one live tracker per tenant.
+type memConn struct {
+	c    admin.Connection
+	cred admin.SealedCredential
+	dead bool
+}
+
+func (m *memStore) live() []*memConn {
+	var out []*memConn
+	for _, mc := range m.conns {
+		if !mc.dead {
+			out = append(out, mc)
+		}
+	}
+	slices.SortFunc(out, func(a, b *memConn) int { return a.c.CreatedAt.Compare(b.c.CreatedAt) })
+	return out
+}
+
+func (m *memStore) ListConnections(_ context.Context, tenant string) ([]admin.Connection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []admin.Connection
+	for _, mc := range m.live() {
+		if mc.c.TenantSlug == tenant {
+			out = append(out, mc.c)
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) ListAllActiveConnections(context.Context) ([]admin.Connection, []admin.SealedCredential, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var cs []admin.Connection
+	var creds []admin.SealedCredential
+	for _, mc := range m.live() {
+		if mc.c.Status == admin.StatusActive {
+			cs, creds = append(cs, mc.c), append(creds, mc.cred)
+		}
+	}
+	return cs, creds, nil
+}
+
+func (m *memStore) GetConnection(_ context.Context, tenant string, id uuid.UUID) (admin.Connection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mc, ok := m.conns[id]; ok && !mc.dead && mc.c.TenantSlug == tenant {
+		return mc.c, nil
+	}
+	return admin.Connection{}, admin.ErrNotFound
+}
+
+func (m *memStore) ConnectionCredential(_ context.Context, id uuid.UUID) (admin.SealedCredential, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mc, ok := m.conns[id]; ok && !mc.dead {
+		return mc.cred, nil
+	}
+	return admin.SealedCredential{}, admin.ErrNotFound
+}
+
+func (m *memStore) SaveConnection(_ context.Context, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, mc := range m.live() {
+		if mc.c.Adapter == c.Adapter && mc.c.ExternalID == c.ExternalID {
+			if mc.c.TenantSlug != c.TenantSlug {
+				return admin.Connection{}, admin.ErrConflict
+			}
+			mc.c.Label, mc.c.Status, mc.c.RefreshAfter, mc.cred = c.Label, c.Status, nil, cred
+			return mc.c, nil
+		}
+		if c.Kind == admin.KindTracker && mc.c.Kind == admin.KindTracker && mc.c.TenantSlug == c.TenantSlug {
+			return admin.Connection{}, admin.ErrTaken
+		}
+	}
+	c.CreatedAt = time.Now()
+	m.conns[c.ID] = &memConn{c: c, cred: cred}
+	return c, nil
+}
+
+func (m *memStore) UpdateConnectionCredential(_ context.Context, id uuid.UUID, cred admin.SealedCredential, refreshAfter *time.Time, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mc, ok := m.conns[id]
+	if !ok || mc.dead {
+		return admin.ErrNotFound
+	}
+	mc.cred, mc.c.RefreshAfter, mc.c.Status = cred, refreshAfter, status
+	return nil
+}
+
+func (m *memStore) DeleteConnection(_ context.Context, tenant string, id uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mc, ok := m.conns[id]
+	if !ok || mc.dead || mc.c.TenantSlug != tenant {
+		return admin.ErrNotFound
+	}
+	mc.dead = true
+	return nil
+}
+
+func (m *memStore) ClaimDueConnections(_ context.Context, now, leaseUntil time.Time) ([]admin.Connection, []admin.SealedCredential, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var cs []admin.Connection
+	var creds []admin.SealedCredential
+	for _, mc := range m.live() {
+		if mc.c.Status == admin.StatusActive && mc.c.RefreshAfter != nil && !mc.c.RefreshAfter.After(now) {
+			lease := leaseUntil
+			mc.c.RefreshAfter = &lease
+			cs, creds = append(cs, mc.c), append(creds, mc.cred)
+		}
+	}
+	return cs, creds, nil
+}
+
+type memState struct {
+	tenant, adapter, kind string
+	expires               time.Time
+	used                  bool
+}
+
+func (m *memStore) CreateOAuthState(_ context.Context, hash []byte, tenant, adapter, kind string, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.states[string(hash)] = &memState{tenant: tenant, adapter: adapter, kind: kind, expires: expiresAt}
+	return nil
+}
+
+func (m *memStore) ConsumeOAuthState(_ context.Context, hash []byte, now time.Time) (string, string, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.states[string(hash)]
+	if !ok || st.used || !st.expires.After(now) {
+		return "", "", "", admin.ErrNotFound
+	}
+	st.used = true
+	return st.tenant, st.adapter, st.kind, nil
 }

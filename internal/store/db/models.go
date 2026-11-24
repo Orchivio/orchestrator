@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Connection struct {
+	ID           uuid.UUID
+	TenantSlug   string
+	Kind         string
+	Adapter      string
+	ExternalID   string
+	Label        string
+	Status       string
+	KeyID        string
+	Credential   []byte
+	RefreshAfter *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	DeletedAt    *time.Time
+}
+
 type Conversation struct {
 	ID        uuid.UUID
 	TenantID  string
@@ -32,6 +48,7 @@ type InboundEvent struct {
 	Source     string
 	ExternalID string
 	ReceivedAt time.Time
+	TenantID   string
 }
 
 type Input struct {
@@ -44,6 +61,16 @@ type Input struct {
 	RunID          *uuid.UUID
 	CreatedAt      time.Time
 	FromAgent      bool
+}
+
+type OauthState struct {
+	Hash       []byte
+	TenantSlug string
+	Adapter    string
+	Kind       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	UsedAt     *time.Time
 }
 
 type Profile struct {

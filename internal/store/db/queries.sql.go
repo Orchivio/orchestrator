@@ -101,6 +101,54 @@ func (q *Queries) AppendEvent(ctx context.Context, arg AppendEventParams) error 
 	return err
 }
 
+const claimDueConnections = `-- name: ClaimDueConnections :many
+UPDATE connections SET refresh_after = $1::timestamptz
+WHERE id IN (
+    SELECT c.id FROM connections c
+    WHERE c.deleted_at IS NULL AND c.status = 'active' AND c.refresh_after <= $2::timestamptz
+    ORDER BY c.refresh_after FOR UPDATE SKIP LOCKED)
+RETURNING id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at
+`
+
+type ClaimDueConnectionsParams struct {
+	LeaseUntil time.Time
+	Now        time.Time
+}
+
+func (q *Queries) ClaimDueConnections(ctx context.Context, arg ClaimDueConnectionsParams) ([]Connection, error) {
+	rows, err := q.db.Query(ctx, claimDueConnections, arg.LeaseUntil, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Connection
+	for rows.Next() {
+		var i Connection
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantSlug,
+			&i.Kind,
+			&i.Adapter,
+			&i.ExternalID,
+			&i.Label,
+			&i.Status,
+			&i.KeyID,
+			&i.Credential,
+			&i.RefreshAfter,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimInputs = `-- name: ClaimInputs :exec
 UPDATE inputs SET run_id = $2 WHERE conversation_id = $1 AND run_id IS NULL
 `
@@ -113,6 +161,30 @@ type ClaimInputsParams struct {
 func (q *Queries) ClaimInputs(ctx context.Context, arg ClaimInputsParams) error {
 	_, err := q.db.Exec(ctx, claimInputs, arg.ConversationID, arg.RunID)
 	return err
+}
+
+const consumeOAuthState = `-- name: ConsumeOAuthState :one
+UPDATE oauth_states SET used_at = $2::timestamptz
+WHERE hash = $1 AND used_at IS NULL AND expires_at > $2::timestamptz
+RETURNING tenant_slug, adapter, kind
+`
+
+type ConsumeOAuthStateParams struct {
+	Hash []byte
+	Now  time.Time
+}
+
+type ConsumeOAuthStateRow struct {
+	TenantSlug string
+	Adapter    string
+	Kind       string
+}
+
+func (q *Queries) ConsumeOAuthState(ctx context.Context, arg ConsumeOAuthStateParams) (ConsumeOAuthStateRow, error) {
+	row := q.db.QueryRow(ctx, consumeOAuthState, arg.Hash, arg.Now)
+	var i ConsumeOAuthStateRow
+	err := row.Scan(&i.TenantSlug, &i.Adapter, &i.Kind)
+	return i, err
 }
 
 const countLiveProjectsOfProfile = `-- name: CountLiveProjectsOfProfile :one
@@ -184,6 +256,31 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 		arg.Project,
 		arg.TicketRef,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const createOAuthState = `-- name: CreateOAuthState :exec
+INSERT INTO oauth_states (hash, tenant_slug, adapter, kind, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateOAuthStateParams struct {
+	Hash       []byte
+	TenantSlug string
+	Adapter    string
+	Kind       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
+func (q *Queries) CreateOAuthState(ctx context.Context, arg CreateOAuthStateParams) error {
+	_, err := q.db.Exec(ctx, createOAuthState,
+		arg.Hash,
+		arg.TenantSlug,
+		arg.Adapter,
+		arg.Kind,
+		arg.CreatedAt,
+		arg.ExpiresAt,
 	)
 	return err
 }
@@ -407,6 +504,24 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 	return i, err
 }
 
+const deleteConnection = `-- name: DeleteConnection :execrows
+UPDATE connections SET deleted_at = $3, updated_at = $3 WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type DeleteConnectionParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+	DeletedAt  *time.Time
+}
+
+func (q *Queries) DeleteConnection(ctx context.Context, arg DeleteConnectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteConnection, arg.TenantSlug, arg.ID, arg.DeletedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteProfile = `-- name: DeleteProfile :execrows
 UPDATE profiles SET deleted_at = $3, updated_at = $3, version = version + 1
 WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND ($4::bigint = 0 OR version = $4)
@@ -495,6 +610,52 @@ func (q *Queries) FindConversation(ctx context.Context, arg FindConversationPara
 		&i.TicketRef,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const getConnection = `-- name: GetConnection :one
+SELECT id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at FROM connections WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type GetConnectionParams struct {
+	TenantSlug string
+	ID         uuid.UUID
+}
+
+func (q *Queries) GetConnection(ctx context.Context, arg GetConnectionParams) (Connection, error) {
+	row := q.db.QueryRow(ctx, getConnection, arg.TenantSlug, arg.ID)
+	var i Connection
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.Kind,
+		&i.Adapter,
+		&i.ExternalID,
+		&i.Label,
+		&i.Status,
+		&i.KeyID,
+		&i.Credential,
+		&i.RefreshAfter,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getConnectionCredential = `-- name: GetConnectionCredential :one
+SELECT key_id, credential FROM connections WHERE id = $1 AND deleted_at IS NULL
+`
+
+type GetConnectionCredentialRow struct {
+	KeyID      string
+	Credential []byte
+}
+
+func (q *Queries) GetConnectionCredential(ctx context.Context, id uuid.UUID) (GetConnectionCredentialRow, error) {
+	row := q.db.QueryRow(ctx, getConnectionCredential, id)
+	var i GetConnectionCredentialRow
+	err := row.Scan(&i.KeyID, &i.Credential)
 	return i, err
 }
 
@@ -690,6 +851,82 @@ func (q *Queries) LeaseNext(ctx context.Context, arg LeaseNextParams) (Run, erro
 		&i.ProjectID,
 	)
 	return i, err
+}
+
+const listAllActiveConnections = `-- name: ListAllActiveConnections :many
+SELECT id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at FROM connections WHERE deleted_at IS NULL AND status = 'active' ORDER BY created_at, id
+`
+
+func (q *Queries) ListAllActiveConnections(ctx context.Context) ([]Connection, error) {
+	rows, err := q.db.Query(ctx, listAllActiveConnections)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Connection
+	for rows.Next() {
+		var i Connection
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantSlug,
+			&i.Kind,
+			&i.Adapter,
+			&i.ExternalID,
+			&i.Label,
+			&i.Status,
+			&i.KeyID,
+			&i.Credential,
+			&i.RefreshAfter,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConnections = `-- name: ListConnections :many
+SELECT id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at FROM connections WHERE tenant_slug = $1 AND deleted_at IS NULL ORDER BY created_at, id
+`
+
+func (q *Queries) ListConnections(ctx context.Context, tenantSlug string) ([]Connection, error) {
+	rows, err := q.db.Query(ctx, listConnections, tenantSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Connection
+	for rows.Next() {
+		var i Connection
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantSlug,
+			&i.Kind,
+			&i.Adapter,
+			&i.ExternalID,
+			&i.Label,
+			&i.Status,
+			&i.KeyID,
+			&i.Credential,
+			&i.RefreshAfter,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listEvents = `-- name: ListEvents :many
@@ -943,18 +1180,24 @@ func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
 }
 
 const markInbound = `-- name: MarkInbound :execrows
-INSERT INTO inbound_events (source, external_id, received_at)
-VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
+INSERT INTO inbound_events (tenant_id, source, external_id, received_at)
+VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING
 `
 
 type MarkInboundParams struct {
+	TenantID   string
 	Source     string
 	ExternalID string
 	ReceivedAt time.Time
 }
 
 func (q *Queries) MarkInbound(ctx context.Context, arg MarkInboundParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markInbound, arg.Source, arg.ExternalID, arg.ReceivedAt)
+	result, err := q.db.Exec(ctx, markInbound,
+		arg.TenantID,
+		arg.Source,
+		arg.ExternalID,
+		arg.ReceivedAt,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1013,6 +1256,62 @@ func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const saveConnection = `-- name: SaveConnection :one
+INSERT INTO connections (id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+ON CONFLICT (adapter, external_id) WHERE deleted_at IS NULL DO UPDATE
+SET label = EXCLUDED.label, status = EXCLUDED.status, key_id = EXCLUDED.key_id, credential = EXCLUDED.credential,
+    refresh_after = NULL, updated_at = EXCLUDED.updated_at
+WHERE connections.tenant_slug = EXCLUDED.tenant_slug
+RETURNING id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at
+`
+
+type SaveConnectionParams struct {
+	ID         uuid.UUID
+	TenantSlug string
+	Kind       string
+	Adapter    string
+	ExternalID string
+	Label      string
+	Status     string
+	KeyID      string
+	Credential []byte
+	CreatedAt  time.Time
+}
+
+// Reconnect keeps id and created_at; no row returned = another tenant holds the external id.
+func (q *Queries) SaveConnection(ctx context.Context, arg SaveConnectionParams) (Connection, error) {
+	row := q.db.QueryRow(ctx, saveConnection,
+		arg.ID,
+		arg.TenantSlug,
+		arg.Kind,
+		arg.Adapter,
+		arg.ExternalID,
+		arg.Label,
+		arg.Status,
+		arg.KeyID,
+		arg.Credential,
+		arg.CreatedAt,
+	)
+	var i Connection
+	err := row.Scan(
+		&i.ID,
+		&i.TenantSlug,
+		&i.Kind,
+		&i.Adapter,
+		&i.ExternalID,
+		&i.Label,
+		&i.Status,
+		&i.KeyID,
+		&i.Credential,
+		&i.RefreshAfter,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const tokenByHash = `-- name: TokenByHash :one
 SELECT id, name, prefix, hash, scope, tenant_slug, role, created_at, expires_at, revoked_at FROM tokens WHERE hash = $1
 `
@@ -1033,6 +1332,35 @@ func (q *Queries) TokenByHash(ctx context.Context, hash []byte) (Token, error) {
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const updateConnectionCredential = `-- name: UpdateConnectionCredential :execrows
+UPDATE connections SET key_id = $2, credential = $3, refresh_after = $4, status = $5, updated_at = $6
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type UpdateConnectionCredentialParams struct {
+	ID           uuid.UUID
+	KeyID        string
+	Credential   []byte
+	RefreshAfter *time.Time
+	Status       string
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) UpdateConnectionCredential(ctx context.Context, arg UpdateConnectionCredentialParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateConnectionCredential,
+		arg.ID,
+		arg.KeyID,
+		arg.Credential,
+		arg.RefreshAfter,
+		arg.Status,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateProfile = `-- name: UpdateProfile :one

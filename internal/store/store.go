@@ -102,8 +102,8 @@ func orNil[T any, R any](row T, err error, conv func(T) R) (*R, error) {
 	return &r, nil
 }
 
-func (s *Store) MarkInbound(ctx context.Context, source, externalID string) (bool, error) {
-	n, err := s.q.MarkInbound(ctx, db.MarkInboundParams{Source: source, ExternalID: externalID, ReceivedAt: s.now()})
+func (s *Store) MarkInbound(ctx context.Context, tenant, source, externalID string) (bool, error) {
+	n, err := s.q.MarkInbound(ctx, db.MarkInboundParams{TenantID: tenant, Source: source, ExternalID: externalID, ReceivedAt: s.now()})
 	return n == 1, err
 }
 

@@ -1,6 +1,6 @@
 -- name: MarkInbound :execrows
-INSERT INTO inbound_events (source, external_id, received_at)
-VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;
+INSERT INTO inbound_events (tenant_id, source, external_id, received_at)
+VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;
 
 -- name: FindConversation :one
 SELECT * FROM conversations WHERE tenant_id = $1 AND ticket_ref = $2;
@@ -150,3 +150,48 @@ SELECT * FROM tokens WHERE hash = $1;
 
 -- name: CountTokens :one
 SELECT count(*) FROM tokens;
+
+-- name: ListConnections :many
+SELECT * FROM connections WHERE tenant_slug = $1 AND deleted_at IS NULL ORDER BY created_at, id;
+
+-- name: ListAllActiveConnections :many
+SELECT * FROM connections WHERE deleted_at IS NULL AND status = 'active' ORDER BY created_at, id;
+
+-- name: GetConnection :one
+SELECT * FROM connections WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL;
+
+-- name: GetConnectionCredential :one
+SELECT key_id, credential FROM connections WHERE id = $1 AND deleted_at IS NULL;
+
+-- Reconnect keeps id and created_at; no row returned = another tenant holds the external id.
+-- name: SaveConnection :one
+INSERT INTO connections (id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+ON CONFLICT (adapter, external_id) WHERE deleted_at IS NULL DO UPDATE
+SET label = EXCLUDED.label, status = EXCLUDED.status, key_id = EXCLUDED.key_id, credential = EXCLUDED.credential,
+    refresh_after = NULL, updated_at = EXCLUDED.updated_at
+WHERE connections.tenant_slug = EXCLUDED.tenant_slug
+RETURNING *;
+
+-- name: UpdateConnectionCredential :execrows
+UPDATE connections SET key_id = $2, credential = $3, refresh_after = $4, status = $5, updated_at = $6
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: DeleteConnection :execrows
+UPDATE connections SET deleted_at = $3, updated_at = $3 WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL;
+
+-- name: ClaimDueConnections :many
+UPDATE connections SET refresh_after = sqlc.arg(lease_until)::timestamptz
+WHERE id IN (
+    SELECT c.id FROM connections c
+    WHERE c.deleted_at IS NULL AND c.status = 'active' AND c.refresh_after <= sqlc.arg(now)::timestamptz
+    ORDER BY c.refresh_after FOR UPDATE SKIP LOCKED)
+RETURNING *;
+
+-- name: CreateOAuthState :exec
+INSERT INTO oauth_states (hash, tenant_slug, adapter, kind, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: ConsumeOAuthState :one
+UPDATE oauth_states SET used_at = sqlc.arg(now)::timestamptz
+WHERE hash = $1 AND used_at IS NULL AND expires_at > sqlc.arg(now)::timestamptz
+RETURNING tenant_slug, adapter, kind;
