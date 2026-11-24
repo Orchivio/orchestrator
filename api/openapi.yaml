@@ -7,6 +7,10 @@ info:
     Every single-resource response carries ETag "<version>"; PUT and DELETE
     honour If-Match "<version>" (absent means last writer wins).
     Errors are RFC 9457 problem details.
+    Instance admin tokens may do everything. A tenant admin token sees only its
+    own tenant (any other tenant in the path is 404), manages that tenant's
+    profiles, projects, connections and tenant tokens, may change only the
+    tenant's displayName, and gets 403 for instance-only actions.
 servers:
   - url: /api/v1
 security:
@@ -27,6 +31,7 @@ paths:
         "201": {$ref: "#/components/responses/TenantCreated"}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "422": {$ref: "#/components/responses/Invalid"}
   /tenants/{slug}:
     parameters: [{$ref: "#/components/parameters/Slug"}]
@@ -46,6 +51,7 @@ paths:
         "200": {$ref: "#/components/responses/TenantOK"}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
         "422": {$ref: "#/components/responses/Invalid"}
@@ -56,6 +62,7 @@ paths:
       responses:
         "204": {description: Deleted}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
@@ -210,13 +217,13 @@ paths:
         "503": {$ref: "#/components/responses/Unavailable"}
   /tokens:
     get:
-      summary: List API tokens (never includes plaintext)
+      summary: List API tokens (never includes plaintext); a tenant admin sees only its tenant's tokens
       operationId: listTokens
       responses:
         "200": {description: Tokens, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Token"}}}}}
         "401": {$ref: "#/components/responses/Unauthorized"}
     post:
-      summary: Issue an instance admin token; the plaintext is shown only in this response
+      summary: Issue an admin token; the plaintext is shown only in this response
       operationId: createToken
       requestBody:
         required: true
@@ -229,15 +236,21 @@ paths:
               properties:
                 name: {type: string}
                 expiresIn: {type: string, examples: ["720h"], description: Go duration; default 90 days}
+                tenant:
+                  type: string
+                  description: >
+                    Tenant slug for a tenant admin token. Omitted by an instance admin: instance token.
+                    A tenant admin may only name its own tenant (omitted means its own).
       responses:
         "201": {description: Token issued, content: {application/json: {schema: {$ref: "#/components/schemas/TokenCreated"}}}}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "422": {$ref: "#/components/responses/Invalid"}
   /tokens/{id}:
     parameters: [{$ref: "#/components/parameters/Id"}]
     delete:
-      summary: Revoke a token
+      summary: Revoke a token (a tenant admin only its tenant's tokens; others are 404)
       operationId: revokeToken
       responses:
         "204": {description: Revoked}
@@ -271,6 +284,7 @@ components:
     ProjectCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
     BadRequest: {description: Malformed JSON, unknown field or bad If-Match, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Unauthorized: {description: Missing, invalid, expired or revoked token, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Forbidden: {description: The token may see the resource but not perform this action, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     NotFound: {description: Resource does not exist, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Conflict: {description: Resource still in use, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     PreconditionFailed: {description: If-Match version is stale, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
@@ -367,7 +381,8 @@ components:
         id: {type: string, format: uuid}
         name: {type: string}
         prefix: {type: string}
-        scope: {type: string, enum: [instance]}
+        scope: {type: string, enum: [instance, tenant]}
+        tenant: {type: string, description: Tenant slug; only for scope tenant}
         role: {type: string, enum: [admin]}
         createdAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}

@@ -64,6 +64,7 @@ func (e *ValidationError) Error() string {
 const (
 	TokenPrefix     = "orv_"
 	ScopeInstance   = "instance"
+	ScopeTenant     = "tenant"
 	RoleAdmin       = "admin"
 	DefaultTokenTTL = 90 * 24 * time.Hour
 )
@@ -98,7 +99,38 @@ type SealedCredential struct {
 	Data  []byte
 }
 
-var ErrUnauthorized = errors.New("unauthorized")
+var (
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrForbidden    = errors.New("forbidden") // 403: allowed to see, not to do
+)
+
+// Principal is who an authenticated request acts as.
+type Principal struct{ Scope, TenantSlug, Role string }
+
+// PrincipalOf returns the principal a token grants, false if the token grants
+// no admin access (unknown scope or role, or a tenant token without tenant).
+func PrincipalOf(t Token) (Principal, bool) {
+	p := Principal{Scope: t.Scope, TenantSlug: t.TenantSlug, Role: t.Role}
+	return p, p.Role == RoleAdmin && (p.IsInstanceAdmin() || p.Scope == ScopeTenant && p.TenantSlug != "")
+}
+
+func (p Principal) IsInstanceAdmin() bool { return p.Scope == ScopeInstance && p.Role == RoleAdmin }
+
+// SeesTenant is nil when p may access tenant slug at all. A foreign tenant is
+// ErrNotFound so its existence is not revealed.
+func (p Principal) SeesTenant(slug string) error {
+	if p.IsInstanceAdmin() || p.TenantSlug == slug {
+		return nil
+	}
+	return fmt.Errorf("tenant %s: %w", slug, ErrNotFound)
+}
+
+func (p Principal) requireInstanceAdmin() error {
+	if p.IsInstanceAdmin() {
+		return nil
+	}
+	return ErrForbidden
+}
 
 // Store persists the admin domain. ifVersion 0 = no precondition. Deletes are
 // soft; lists exclude deleted rows.

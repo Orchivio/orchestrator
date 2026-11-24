@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,21 +11,29 @@ import (
 
 const bearerPrefix = "Bearer "
 
-// RequireInstanceAdmin lets only requests with a valid instance admin bearer
-// token through. Every failure is the same generic 401; the presented token is
-// never echoed or logged.
-func RequireInstanceAdmin(svc *admin.Service, next http.Handler) http.Handler {
+type principalKey struct{}
+
+// PrincipalFrom returns the principal Authenticate stored in ctx.
+func PrincipalFrom(ctx context.Context) (admin.Principal, bool) {
+	p, ok := ctx.Value(principalKey{}).(admin.Principal)
+	return p, ok
+}
+
+// Authenticate lets only requests with a valid admin bearer token (instance or
+// tenant) through and stores their principal in the request context. Every
+// failure is the same generic 401; the presented token is never echoed or logged.
+func Authenticate(svc *admin.Service, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
 		if strings.HasPrefix(header, bearerPrefix) {
 			tok, err := svc.Authenticate(r.Context(), strings.TrimSpace(header[len(bearerPrefix):]))
-			switch {
-			case err == nil && tok.Scope == admin.ScopeInstance && tok.Role == admin.RoleAdmin:
-				next.ServeHTTP(w, r)
-				return
-			case err != nil && !errors.Is(err, admin.ErrUnauthorized):
+			if err != nil && !errors.Is(err, admin.ErrUnauthorized) {
 				svc.Logger().Error("token lookup failed", "err", err)
 				writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "The request could not be processed.")
+				return
+			}
+			if p, ok := admin.PrincipalOf(tok); err == nil && ok {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 				return
 			}
 		}

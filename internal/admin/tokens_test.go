@@ -98,3 +98,81 @@ func TestBootstrapRejectsMalformedToken(t *testing.T) {
 		}
 	}
 }
+
+var (
+	instanceAdmin = admin.Principal{Scope: admin.ScopeInstance, Role: admin.RoleAdmin}
+	acmeAdmin     = admin.Principal{Scope: admin.ScopeTenant, TenantSlug: "acme", Role: admin.RoleAdmin}
+)
+
+func tokenServiceWithTenants(t *testing.T, slugs ...string) *admin.Service {
+	t.Helper()
+	svc, st := tokenService(time.Now)
+	for _, s := range slugs {
+		if _, err := st.CreateTenant(ctx, admin.Tenant{Slug: s}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return svc
+}
+
+func TestInstanceAdminIssuesTenantScopedToken(t *testing.T) {
+	svc := tokenServiceWithTenants(t, "acme")
+	tok, plain, err := svc.IssueTokenFor(ctx, instanceAdmin, "acme-ci", 0, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Authenticate(ctx, plain)
+	if err != nil || got.ID != tok.ID || got.Scope != admin.ScopeTenant || got.TenantSlug != "acme" || got.Role != admin.RoleAdmin {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+}
+
+func TestInstanceAdminWithoutTenantIssuesInstanceToken(t *testing.T) {
+	svc := tokenServiceWithTenants(t)
+	tok, _, err := svc.IssueTokenFor(ctx, instanceAdmin, "ci", 0, "")
+	if err != nil || tok.Scope != admin.ScopeInstance || tok.TenantSlug != "" {
+		t.Fatalf("tok %+v err %v", tok, err)
+	}
+}
+
+func TestIssueTokenForUnknownTenantIsInvalid(t *testing.T) {
+	svc := tokenServiceWithTenants(t)
+	var ve *admin.ValidationError
+	if _, _, err := svc.IssueTokenFor(ctx, instanceAdmin, "ci", 0, "nope"); !errors.As(err, &ve) || !hasField(ve, "tenant") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTenantAdminIssuesOnlyForOwnTenant(t *testing.T) {
+	svc := tokenServiceWithTenants(t, "acme", "other")
+	if _, _, err := svc.IssueTokenFor(ctx, acmeAdmin, "x", 0, "other"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("other tenant: %v", err)
+	}
+	tok, _, err := svc.IssueTokenFor(ctx, acmeAdmin, "x", 0, "")
+	if err != nil || tok.Scope != admin.ScopeTenant || tok.TenantSlug != "acme" {
+		t.Fatalf("default tenant: tok %+v err %v", tok, err)
+	}
+}
+
+func TestTenantAdminSeesAndRevokesOnlyOwnTenantTokens(t *testing.T) {
+	svc := tokenServiceWithTenants(t, "acme", "other")
+	inst, _, _ := svc.IssueTokenFor(ctx, instanceAdmin, "inst", 0, "")
+	foreign, _, _ := svc.IssueTokenFor(ctx, instanceAdmin, "other", 0, "other")
+	own, _, _ := svc.IssueTokenFor(ctx, instanceAdmin, "own", 0, "acme")
+	list, err := svc.ListTokensFor(ctx, acmeAdmin)
+	if err != nil || len(list) != 1 || list[0].ID != own.ID {
+		t.Fatalf("list %+v err %v", list, err)
+	}
+	for _, id := range []uuid.UUID{inst.ID, foreign.ID} {
+		if err := svc.RevokeTokenFor(ctx, acmeAdmin, id); !errors.Is(err, admin.ErrNotFound) {
+			t.Fatalf("revoke %s: %v", id, err)
+		}
+	}
+	if err := svc.RevokeTokenFor(ctx, acmeAdmin, own.ID); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := svc.ListTokensFor(ctx, instanceAdmin)
+	if len(all) != 3 {
+		t.Fatalf("instance admin sees %d tokens", len(all))
+	}
+}

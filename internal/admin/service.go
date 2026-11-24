@@ -79,6 +79,56 @@ func invalid(fields []config.FieldError) error {
 // --- tenants ---
 
 func (s *Service) ListTenants(ctx context.Context) ([]Tenant, error) { return s.store.ListTenants(ctx) }
+
+// ListTenantsFor lists the tenants p may see: all for an instance admin, its own for a tenant admin.
+func (s *Service) ListTenantsFor(ctx context.Context, p Principal) ([]Tenant, error) {
+	if p.IsInstanceAdmin() {
+		return s.ListTenants(ctx)
+	}
+	t, err := s.GetTenant(ctx, p.TenantSlug)
+	if errors.Is(err, ErrNotFound) {
+		return []Tenant{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []Tenant{t}, nil
+}
+
+// CreateTenantFor and DeleteTenantFor are reserved to instance admins.
+func (s *Service) CreateTenantFor(ctx context.Context, p Principal, t Tenant) (Tenant, error) {
+	if err := p.requireInstanceAdmin(); err != nil {
+		return Tenant{}, err
+	}
+	return s.CreateTenant(ctx, t)
+}
+
+func (s *Service) DeleteTenantFor(ctx context.Context, p Principal, slug string, ifVersion int64) error {
+	if err := p.SeesTenant(slug); err != nil {
+		return err
+	}
+	if err := p.requireInstanceAdmin(); err != nil {
+		return err
+	}
+	return s.DeleteTenant(ctx, slug, ifVersion)
+}
+
+// UpdateTenantFor lets a tenant admin change only the display name of its own tenant.
+func (s *Service) UpdateTenantFor(ctx context.Context, p Principal, t Tenant, ifVersion int64) (Tenant, error) {
+	if err := p.SeesTenant(t.Slug); err != nil {
+		return Tenant{}, err
+	}
+	if !p.IsInstanceAdmin() {
+		cur, err := s.store.GetTenant(ctx, t.Slug)
+		if err != nil {
+			return Tenant{}, err
+		}
+		if t.TrackerAdapter != cur.TrackerAdapter || t.CodeHostAdapter != cur.CodeHostAdapter {
+			return Tenant{}, ErrForbidden
+		}
+	}
+	return s.UpdateTenant(ctx, t, ifVersion)
+}
 func (s *Service) GetTenant(ctx context.Context, slug string) (Tenant, error) {
 	return s.store.GetTenant(ctx, slug)
 }
