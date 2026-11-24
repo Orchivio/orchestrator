@@ -309,7 +309,7 @@ func (m *memStore) SaveConnection(_ context.Context, c admin.Connection, cred ad
 			if mc.c.TenantSlug != c.TenantSlug {
 				return admin.Connection{}, admin.ErrConflict
 			}
-			mc.c.Label, mc.c.Status, mc.c.RefreshAfter, mc.cred = c.Label, c.Status, nil, cred
+			mc.c.Label, mc.c.Status, mc.c.RefreshAfter, mc.cred = c.Label, c.Status, c.RefreshAfter, cred
 			return mc.c, nil
 		}
 		if c.Kind == admin.KindTracker && mc.c.Kind == admin.KindTracker && mc.c.TenantSlug == c.TenantSlug {

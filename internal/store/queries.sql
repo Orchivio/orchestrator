@@ -165,11 +165,11 @@ SELECT key_id, credential FROM connections WHERE id = $1 AND deleted_at IS NULL;
 
 -- Reconnect keeps id and created_at; no row returned = another tenant holds the external id.
 -- name: SaveConnection :one
-INSERT INTO connections (id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+INSERT INTO connections (id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, created_at, updated_at, refresh_after)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11)
 ON CONFLICT (adapter, external_id) WHERE deleted_at IS NULL DO UPDATE
 SET label = EXCLUDED.label, status = EXCLUDED.status, key_id = EXCLUDED.key_id, credential = EXCLUDED.credential,
-    refresh_after = NULL, updated_at = EXCLUDED.updated_at
+    refresh_after = EXCLUDED.refresh_after, updated_at = EXCLUDED.updated_at
 WHERE connections.tenant_slug = EXCLUDED.tenant_slug
 RETURNING *;
 

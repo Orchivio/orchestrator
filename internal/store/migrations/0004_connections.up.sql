@@ -27,6 +27,10 @@ CREATE TABLE oauth_states (
 );
 
 ALTER TABLE inbound_events ADD COLUMN tenant_id text NOT NULL DEFAULT '';
+-- Existing dedup rows belong to the single tenant when there is exactly one live tenant; else they stay ''.
+UPDATE inbound_events SET tenant_id = (SELECT slug FROM tenants WHERE deleted_at IS NULL)
+WHERE (SELECT count(*) FROM tenants WHERE deleted_at IS NULL) = 1;
+ALTER TABLE inbound_events ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE inbound_events DROP CONSTRAINT inbound_events_pkey;
 ALTER TABLE inbound_events ADD PRIMARY KEY (tenant_id, source, external_id);
 

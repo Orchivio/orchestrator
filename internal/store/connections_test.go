@@ -3,10 +3,15 @@ package store
 import (
 	"context"
 	"errors"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/orchivio/orchestrator/internal/admin"
 )
 
@@ -32,15 +37,22 @@ func TestSaveConnectionIsExclusiveAcrossTenants(t *testing.T) {
 func TestSaveConnectionReconnectUpdatesSameRow(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
 	a, ext := newTenant(t, s), uuid.NewString()
-	first, err := s.SaveConnection(ctx, connIn(a.Slug, admin.KindCodeHost, "github", ext), cred)
+	due1, due2 := base.Add(time.Hour), base.Add(2*time.Hour)
+	in := connIn(a.Slug, admin.KindCodeHost, "github", ext)
+	in.RefreshAfter = &due1
+	first, err := s.SaveConnection(ctx, in, cred)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if first.RefreshAfter == nil || !first.RefreshAfter.Equal(due1) {
+		t.Fatalf("insert refresh_after = %v", first.RefreshAfter)
 	}
 	if err = s.UpdateConnectionCredential(ctx, first.ID, cred, nil, admin.StatusNeedsReauth); err != nil {
 		t.Fatal(err)
 	}
 	again := connIn(a.Slug, admin.KindCodeHost, "github", ext)
 	again.Label = "new"
+	again.RefreshAfter = &due2
 	second, err := s.SaveConnection(ctx, again, admin.SealedCredential{KeyID: "k2", Data: []byte("new")})
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +61,7 @@ func TestSaveConnectionReconnectUpdatesSameRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.ID != first.ID || second.Status != admin.StatusActive || second.Label != "new" || got.KeyID != "k2" || string(got.Data) != "new" {
+	if second.ID != first.ID || second.Status != admin.StatusActive || second.Label != "new" || second.RefreshAfter == nil || !second.RefreshAfter.Equal(due2) || got.KeyID != "k2" || string(got.Data) != "new" {
 		t.Fatalf("second = %+v, cred = %+v", second, got)
 	}
 }
@@ -199,4 +211,62 @@ func TestInboundDedupIsPerTenant(t *testing.T) {
 			t.Fatalf("%s: %v, %v", tenant, fresh, err)
 		}
 	}
+}
+
+func TestMigrationBackfillsInboundTenantWhenSingleTenant(t *testing.T) {
+	ctx := context.Background()
+	admin0, err := pgx.Connect(ctx, testURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin0.Close(ctx)
+	name := "mig_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err = admin0.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(testURL)
+	u.Path = "/" + name
+	m := newMigrator(t, u.String())
+	if err = m.Migrate(3); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := pgx.Connect(ctx, u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx, `INSERT INTO tenants (slug, display_name, tracker_adapter, code_host_adapter, created_at, updated_at)
+		VALUES ('acme', 'A', 'linear', 'github', now(), now());
+		INSERT INTO inbound_events (source, external_id, received_at) VALUES ('linear', 'e1', now())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Up(); err != nil {
+		t.Fatal(err)
+	}
+	var tenant string
+	if err = conn.QueryRow(ctx, "SELECT tenant_id FROM inbound_events WHERE external_id = 'e1'").Scan(&tenant); err != nil || tenant != "acme" {
+		t.Fatalf("tenant = %q, %v", tenant, err)
+	}
+	if _, err = conn.Exec(ctx, "INSERT INTO inbound_events (source, external_id, received_at) VALUES ('x', 'y', now())"); err == nil {
+		t.Fatal("insert without tenant_id must fail after migration")
+	}
+}
+
+func newMigrator(t *testing.T, databaseURL string) *migrate.Migrate {
+	t.Helper()
+	src, err := iofs.New(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	murl, err := migrationURL(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", src, murl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = m.Close() })
+	return m
 }

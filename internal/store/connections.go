@@ -41,7 +41,7 @@ func (s *Store) ConnectionCredential(ctx context.Context, id uuid.UUID) (admin.S
 func (s *Store) SaveConnection(ctx context.Context, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
 	row, err := s.q.SaveConnection(ctx, db.SaveConnectionParams{ID: c.ID, TenantSlug: c.TenantSlug, Kind: c.Kind,
 		Adapter: c.Adapter, ExternalID: c.ExternalID, Label: c.Label, Status: c.Status, KeyID: cred.KeyID,
-		Credential: cred.Data, CreatedAt: s.now()})
+		Credential: cred.Data, CreatedAt: s.now(), RefreshAfter: c.RefreshAfter})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return admin.Connection{}, fmt.Errorf("%s external id %s: %w", c.Adapter, c.ExternalID, admin.ErrConflict)
 	}

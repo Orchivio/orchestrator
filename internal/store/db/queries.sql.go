@@ -1257,26 +1257,27 @@ func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64
 }
 
 const saveConnection = `-- name: SaveConnection :one
-INSERT INTO connections (id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+INSERT INTO connections (id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, created_at, updated_at, refresh_after)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11)
 ON CONFLICT (adapter, external_id) WHERE deleted_at IS NULL DO UPDATE
 SET label = EXCLUDED.label, status = EXCLUDED.status, key_id = EXCLUDED.key_id, credential = EXCLUDED.credential,
-    refresh_after = NULL, updated_at = EXCLUDED.updated_at
+    refresh_after = EXCLUDED.refresh_after, updated_at = EXCLUDED.updated_at
 WHERE connections.tenant_slug = EXCLUDED.tenant_slug
 RETURNING id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at
 `
 
 type SaveConnectionParams struct {
-	ID         uuid.UUID
-	TenantSlug string
-	Kind       string
-	Adapter    string
-	ExternalID string
-	Label      string
-	Status     string
-	KeyID      string
-	Credential []byte
-	CreatedAt  time.Time
+	ID           uuid.UUID
+	TenantSlug   string
+	Kind         string
+	Adapter      string
+	ExternalID   string
+	Label        string
+	Status       string
+	KeyID        string
+	Credential   []byte
+	CreatedAt    time.Time
+	RefreshAfter *time.Time
 }
 
 // Reconnect keeps id and created_at; no row returned = another tenant holds the external id.
@@ -1292,6 +1293,7 @@ func (q *Queries) SaveConnection(ctx context.Context, arg SaveConnectionParams) 
 		arg.KeyID,
 		arg.Credential,
 		arg.CreatedAt,
+		arg.RefreshAfter,
 	)
 	var i Connection
 	err := row.Scan(
