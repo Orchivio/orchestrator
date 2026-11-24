@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +51,7 @@ func (f *fakeConnector) Refresh(context.Context, string, string, []byte, *time.T
 func (f *fakeConnector) Disconnect(context.Context, string, string, []byte) error { return nil }
 
 func (f *fakeConnector) CheckAccess(context.Context, string, string, [][]byte, []string) ([]string, error) {
-	return nil, errors.New("not used")
+	return nil, nil // everything accessible
 }
 
 type connEnv struct {
@@ -185,7 +186,8 @@ func TestAuthorizeAdapterFailureIs502WithoutDetail(t *testing.T) {
 }
 
 func TestConnectionEndpointsUnavailableWithoutBox(t *testing.T) {
-	e := newEnv(t) // no box, no connector
+	e := newEnvWith(t, admin.NewService(newMemStore(), map[string]string{"linear": "a:1", "github": "b:2"}, nil, nil, "",
+		time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	e.seedTenantAndProfile()
 	for _, r := range []struct{ method, path string }{
 		{"POST", "/api/v1/tenants/acme/connections/github/authorize"},

@@ -173,10 +173,11 @@ func TestIngestContinuesAfterHandlerError(t *testing.T) {
 
 func testConfig() *config.Config {
 	return &config.Config{Tenants: map[string]config.Tenant{"acme": {
-		Name:     "acme",
-		Tracker:  config.AdapterRef{Name: "linear", Address: "adapter-linear:7101"},
-		CodeHost: config.AdapterRef{Name: "github", Address: "adapter-github:7201"},
-		Projects: []config.Project{{Name: "demo", TrackerKey: "ORC", Milestones: config.DefaultMilestones()}},
+		Name:              "acme",
+		Tracker:           config.AdapterRef{Name: "linear", Address: "adapter-linear:7101"},
+		CodeHost:          config.AdapterRef{Name: "github", Address: "adapter-github:7201"},
+		Projects:          []config.Project{{Name: "demo", TrackerKey: "ORC", Milestones: config.DefaultMilestones()}},
+		TrackerCredential: []byte("trk"),
 	}}}
 }
 
@@ -200,6 +201,7 @@ func (s *mutableSource) set(c *config.Config) {
 
 type streamCall struct {
 	keys      []string
+	cred      string
 	cancelled chan struct{}
 }
 
@@ -217,7 +219,7 @@ func (f *recordingTracker) GetCapabilities(context.Context, *pluginv1.GetCapabil
 }
 
 func (f *recordingTracker) StreamEvents(req *pluginv1.StreamEventsRequest, s pluginv1.TrackerAdapter_StreamEventsServer) error {
-	c := &streamCall{keys: req.GetProjectKeys(), cancelled: make(chan struct{})}
+	c := &streamCall{keys: req.GetProjectKeys(), cred: string(req.GetCredential().GetData()), cancelled: make(chan struct{})}
 	f.mu.Lock()
 	f.calls = append(f.calls, c)
 	f.mu.Unlock()
@@ -400,5 +402,45 @@ func TestIngestHandlerKeepsLiveContextWhenKeysChange(t *testing.T) {
 
 	if err := <-handlerCtxErr; err != nil {
 		t.Fatalf("handler ctx was cancelled mid-event: %v", err)
+	}
+}
+
+func withCredential(c *config.Config, cred string) *config.Config {
+	t := c.Tenants["acme"]
+	t.TrackerCredential = nil
+	if cred != "" {
+		t.TrackerCredential = []byte(cred)
+	}
+	c.Tenants["acme"] = t
+	return c
+}
+
+func TestIngestRestartsStreamOnCredentialChange(t *testing.T) {
+	src, cfg, tr := startIngest(t, withCredential(tenantWith("RES"), "old"))
+	eventually(t, "first stream", func() bool { return len(tr.snapshot()) == 1 })
+
+	reload(t, src, cfg, withCredential(tenantWith("RES"), "old")) // unchanged: no restart
+	reload(t, src, cfg, withCredential(tenantWith("RES"), "new"))
+
+	eventually(t, "second stream with new credential", func() bool {
+		calls := tr.snapshot()
+		return len(calls) == 2 && calls[1].cred == "new"
+	})
+	if calls := tr.snapshot(); calls[0].cred != "old" {
+		t.Fatalf("first stream credential = %q", calls[0].cred)
+	}
+	eventually(t, "first stream cancelled", func() bool { return isClosed(tr.snapshot()[0].cancelled) })
+}
+
+func TestIngestStopsStreamWhenTrackerCredentialGone(t *testing.T) {
+	src, cfg, tr := startIngest(t, tenantWith("RES"))
+	eventually(t, "first stream", func() bool { return len(tr.snapshot()) == 1 })
+
+	reload(t, src, cfg, withCredential(tenantWith("RES"), "")) // e.g. connection needs_reauth
+
+	eventually(t, "stream cancelled", func() bool { return isClosed(tr.snapshot()[0].cancelled) })
+	reload(t, src, cfg, withCredential(tenantWith("RES", "ORC"), "")) // key change alone starts nothing
+	if n := len(tr.snapshot()); n != 1 {
+		t.Fatalf("streams = %d, want 1", n)
 	}
 }

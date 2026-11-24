@@ -60,7 +60,7 @@ func mapErr(adapter, op string, err error) error {
 	case codes.Unavailable, codes.DeadlineExceeded:
 		return fmt.Errorf("%s at %s: %w: %w", op, adapter, admin.ErrUnavailable, err)
 	}
-	return fmt.Errorf("%s at %s: %w", op, adapter, err)
+	return fmt.Errorf("%s at %s: %w: %w", op, adapter, admin.ErrAdapter, err)
 }
 
 func (c *connector) BeginConnect(ctx context.Context, adapter, kind, tenant, redirectURI, state string) (string, error) {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"time"
@@ -115,9 +116,29 @@ func (s *Service) UpdateTenant(ctx context.Context, t Tenant, ifVersion int64) (
 	if err := invalid(errs); err != nil {
 		return Tenant{}, err
 	}
+	if t.CodeHostAdapter != cur.CodeHostAdapter {
+		if err := s.requireNoCodeHostConnection(ctx, t.Slug); err != nil {
+			return Tenant{}, err
+		}
+	}
 	t.CreatedAt, t.UpdatedAt = cur.CreatedAt, s.now()
 	updated, err := s.store.UpdateTenant(ctx, t, ifVersion)
 	return finish(s, ctx, updated, err, "slug")
+}
+
+// requireNoCodeHostConnection is ErrInUse while the tenant has an active code
+// host connection: every one must use the tenant's code host adapter.
+func (s *Service) requireNoCodeHostConnection(ctx context.Context, tenant string) error {
+	conns, err := s.store.ListConnections(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	for _, c := range conns {
+		if c.Kind == KindCodeHost && c.Status == StatusActive {
+			return fmt.Errorf("tenant %s has active code host connection %s: %w", tenant, c.ID, ErrInUse)
+		}
+	}
+	return nil
 }
 
 func (s *Service) DeleteTenant(ctx context.Context, slug string, ifVersion int64) error {
@@ -249,7 +270,7 @@ func (s *Service) CreateProject(ctx context.Context, p Project) (Project, error)
 	if err != nil {
 		return Project{}, err
 	}
-	if err := invalid(errs); err != nil {
+	if err := s.validateAccess(ctx, tenant, p, errs); err != nil {
 		return Project{}, err
 	}
 	p.ID = s.newID()
@@ -270,7 +291,11 @@ func (s *Service) UpdateProject(ctx context.Context, p Project, ifVersion int64)
 	if p.TrackerKey != cur.TrackerKey {
 		errs = append(errs, config.FieldError{Field: "trackerKey", Message: msgImmutable})
 	}
-	if err := invalid(errs); err != nil {
+	tenant, err := s.store.GetTenant(ctx, p.TenantSlug)
+	if err != nil {
+		return Project{}, err
+	}
+	if err := s.validateAccess(ctx, tenant, p, errs); err != nil {
 		return Project{}, err
 	}
 	p.CreatedAt, p.UpdatedAt = cur.CreatedAt, s.now()

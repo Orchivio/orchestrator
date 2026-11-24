@@ -127,6 +127,8 @@ func TestConnectorMapsAdapterErrors(t *testing.T) {
 		{codes.Unauthenticated, func(err error) bool { return errors.Is(err, admin.ErrCredentialRejected) }},
 		{codes.PermissionDenied, func(err error) bool { return errors.Is(err, admin.ErrCredentialRejected) }},
 		{codes.Unavailable, func(err error) bool { return errors.Is(err, admin.ErrUnavailable) }},
+		{codes.Internal, func(err error) bool { return errors.Is(err, admin.ErrAdapter) }},
+		{codes.Unknown, func(err error) bool { return errors.Is(err, admin.ErrAdapter) }},
 		{codes.FailedPrecondition, func(err error) bool {
 			var nc *admin.NotConnectedError
 			return errors.Is(err, admin.ErrNotConnected) && errors.As(err, &nc) && nc.Reason == "org owner required"

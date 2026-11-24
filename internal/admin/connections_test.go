@@ -28,6 +28,18 @@ type fakeConnector struct {
 	completeErr           error
 	completeCalls         int
 	disconnected          [][]byte
+	refreshed             admin.Completed
+	refreshErr            error
+	refreshedWith         [][]byte
+	denied                map[string]bool // items CheckAccess denies
+	checkErr              error
+	checks                []checkCall
+}
+
+type checkCall struct {
+	adapter, kind string
+	creds         []string
+	items         []string
 }
 
 func (f *fakeConnector) BeginConnect(_ context.Context, adapter, kind, tenant, redirectURI, state string) (string, error) {
@@ -45,8 +57,11 @@ func (f *fakeConnector) CompleteConnect(_ context.Context, adapter, kind, redire
 	return f.completed, f.completeErr
 }
 
-func (f *fakeConnector) Refresh(context.Context, string, string, []byte, *time.Time) (admin.Completed, error) {
-	return admin.Completed{}, errors.New("not used")
+func (f *fakeConnector) Refresh(_ context.Context, _, _ string, data []byte, _ *time.Time) (admin.Completed, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshedWith = append(f.refreshedWith, data)
+	return f.refreshed, f.refreshErr
 }
 
 func (f *fakeConnector) Disconnect(_ context.Context, adapter, kind string, data []byte) error {
@@ -56,8 +71,21 @@ func (f *fakeConnector) Disconnect(_ context.Context, adapter, kind string, data
 	return errors.New("provider down") // best effort: must not block the delete
 }
 
-func (f *fakeConnector) CheckAccess(context.Context, string, string, [][]byte, []string) ([]string, error) {
-	return nil, errors.New("not used")
+func (f *fakeConnector) CheckAccess(_ context.Context, adapter, kind string, creds [][]byte, items []string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	call := checkCall{adapter: adapter, kind: kind, items: items}
+	for _, c := range creds {
+		call.creds = append(call.creds, string(c))
+	}
+	f.checks = append(f.checks, call)
+	var denied []string
+	for _, it := range items {
+		if f.denied[it] {
+			denied = append(denied, it)
+		}
+	}
+	return denied, f.checkErr
 }
 
 type connEnv struct {
@@ -76,7 +104,7 @@ func newConnEnv(t *testing.T) *connEnv {
 		t.Fatal(err)
 	}
 	e := &connEnv{store: newMemStore(), conn: &fakeConnector{}, box: box, now: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC), logs: &bytes.Buffer{}}
-	adapters := map[string]string{"linear": "adapter-linear:7101", "github": "adapter-github:7201"}
+	adapters := map[string]string{"linear": "adapter-linear:7101", "github": "adapter-github:7201", "gitlab": "adapter-gitlab:7301"}
 	e.svc = admin.NewService(e.store, adapters, box, e.conn, "http://localhost:8088", func() time.Time { return e.now }, uuid.New,
 		slog.New(slog.NewTextHandler(e.logs, nil)))
 	seed(t, e.svc)
@@ -233,6 +261,9 @@ func TestTrackerSwitchBlockedWhileProjectsExist(t *testing.T) {
 	if _, err := e.connect(t, "linear", "ws1"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := e.connect(t, "github", "inst1"); err != nil {
+		t.Fatal(err)
+	}
 	prof, err := e.svc.GetProfile(ctx, "acme", e.store.profileID())
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +280,7 @@ func TestTrackerSwitchBlockedWhileProjectsExist(t *testing.T) {
 	}
 	c, err := e.connect(t, "linear", "ws2")
 	conns, _ := e.svc.ListConnections(ctx, "acme")
-	if err != nil || len(conns) != 1 || conns[0].ID != c.ID || conns[0].ExternalID != "ws2" {
+	if err != nil || len(conns) != 2 || conns[1].ID != c.ID || conns[1].ExternalID != "ws2" {
 		t.Fatalf("err = %v conns %+v", err, conns)
 	}
 }

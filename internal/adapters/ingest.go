@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"crypto/sha256"
 	"io"
 	"log/slog"
 	"slices"
@@ -17,9 +18,10 @@ const (
 	maxBackoff     = 30 * time.Second
 )
 
-// Run reads the tracker event stream of every tenant with projects and hands
-// each event to handle. It follows config changes: a tenant's stream is
-// (re)started when its project keys change and stopped when it has none left.
+// Run reads the tracker event stream of every tenant with projects and an
+// active tracker connection and hands each event to handle. It follows config
+// changes: a tenant's stream is (re)started when its project keys or its
+// tracker credential change and stopped when it has no keys or credential left.
 // Each stream reconnects with backoff. Run returns on ctx done once all
 // streams have stopped.
 func Run(ctx context.Context, cfg *config.Sync, reg *Registry,
@@ -27,8 +29,17 @@ func Run(ctx context.Context, cfg *config.Sync, reg *Registry,
 	run(ctx, cfg, reg, handle, log, initialBackoff, maxBackoff)
 }
 
+// streamKey identifies what a running stream was started with; the
+// credential only as its hash.
+type streamKey struct {
+	keys []string
+	cred [sha256.Size]byte
+}
+
+func (k streamKey) equal(o streamKey) bool { return k.cred == o.cred && slices.Equal(k.keys, o.keys) }
+
 type tenantStream struct {
-	keys   []string
+	key    streamKey
 	cancel context.CancelFunc
 }
 
@@ -38,20 +49,20 @@ func run(ctx context.Context, cfg *config.Sync, reg *Registry,
 	var wg sync.WaitGroup
 	streams := map[string]tenantStream{}
 	apply := func() {
-		want := projectKeys(cfg.Current())
+		want := streamKeys(cfg.Current())
 		for tenant, s := range streams {
-			if !slices.Equal(s.keys, want[tenant]) {
+			if w, ok := want[tenant]; !ok || !s.key.equal(w) {
 				s.cancel()
 				delete(streams, tenant)
 			}
 		}
-		for tenant, keys := range want {
+		for tenant, key := range want {
 			if _, ok := streams[tenant]; ok {
 				continue
 			}
 			sctx, cancel := context.WithCancel(ctx)
-			streams[tenant] = tenantStream{keys: keys, cancel: cancel}
-			wg.Go(func() { ingestTenant(ctx, sctx, reg, tenant, keys, handle, log, initial, limit) })
+			streams[tenant] = tenantStream{key: key, cancel: cancel}
+			wg.Go(func() { ingestTenant(ctx, sctx, reg, tenant, key.keys, handle, log, initial, limit) })
 		}
 	}
 	apply()
@@ -66,14 +77,20 @@ func run(ctx context.Context, cfg *config.Sync, reg *Registry,
 	}
 }
 
-// projectKeys maps each tenant with projects to its sorted tracker keys.
-func projectKeys(c *config.Config) map[string][]string {
-	out := map[string][]string{}
+// streamKeys maps each tenant with projects and a tracker credential to its
+// sorted tracker keys and credential hash.
+func streamKeys(c *config.Config) map[string]streamKey {
+	out := map[string]streamKey{}
 	for name, t := range c.Tenants {
-		for _, p := range t.Projects {
-			out[name] = append(out[name], p.TrackerKey)
+		if len(t.Projects) == 0 || t.TrackerCredential == nil {
+			continue
 		}
-		slices.Sort(out[name])
+		k := streamKey{cred: sha256.Sum256(t.TrackerCredential)}
+		for _, p := range t.Projects {
+			k.keys = append(k.keys, p.TrackerKey)
+		}
+		slices.Sort(k.keys)
+		out[name] = k
 	}
 	return out
 }
@@ -106,11 +123,11 @@ func ingestTenant(runCtx, ctx context.Context, reg *Registry, tenant string, key
 // event arrived.
 func streamOnce(runCtx, ctx context.Context, reg *Registry, tenant string, keys []string,
 	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger) (received bool, err error) {
-	c, err := reg.trackerClient(ctx, tenant)
+	c, cred, err := reg.trackerClient(ctx, tenant)
 	if err != nil {
 		return false, err
 	}
-	stream, err := c.StreamEvents(ctx, &pluginv1.StreamEventsRequest{ProjectKeys: keys})
+	stream, err := c.StreamEvents(ctx, &pluginv1.StreamEventsRequest{ProjectKeys: keys, Credential: cred})
 	if err != nil {
 		return false, err
 	}

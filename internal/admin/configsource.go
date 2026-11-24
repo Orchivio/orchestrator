@@ -23,7 +23,46 @@ func (s *Service) Load(ctx context.Context) (*config.Config, error) {
 		}
 		cfg.Tenants[t.Slug] = ct
 	}
+	if err := s.loadCredentials(ctx, tenants, cfg); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+// loadCredentials decrypts the active connections into their tenants. A
+// connection of an adapter the tenant no longer uses is skipped; one that
+// cannot be decrypted is logged (by id) and skipped so the others still load.
+func (s *Service) loadCredentials(ctx context.Context, tenants []Tenant, cfg *config.Config) error {
+	if s.box == nil {
+		return nil
+	}
+	conns, sealed, err := s.store.ListAllActiveConnections(ctx)
+	if err != nil {
+		return fmt.Errorf("list active connections: %w", err)
+	}
+	bySlug := make(map[string]Tenant, len(tenants))
+	for _, t := range tenants {
+		bySlug[t.Slug] = t
+	}
+	for i, c := range conns {
+		t, ok := bySlug[c.TenantSlug]
+		if !ok || kindOf(t, c.Adapter) != c.Kind {
+			continue
+		}
+		plain, err := s.box.Open(sealed[i].KeyID, sealed[i].Data)
+		if err != nil {
+			s.log.Error("connection credential unusable", "connection", c.ID, "tenant", c.TenantSlug, "error", err)
+			continue
+		}
+		ct := cfg.Tenants[c.TenantSlug]
+		if c.Kind == KindTracker {
+			ct.TrackerCredential = plain
+		} else {
+			ct.CodeHostCredentials = append(ct.CodeHostCredentials, plain)
+		}
+		cfg.Tenants[c.TenantSlug] = ct
+	}
+	return nil
 }
 
 func (s *Service) loadTenant(ctx context.Context, t Tenant) (config.Tenant, error) {

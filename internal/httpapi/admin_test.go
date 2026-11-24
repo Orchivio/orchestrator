@@ -15,6 +15,7 @@ import (
 
 	"github.com/orchivio/orchestrator/internal/admin"
 	"github.com/orchivio/orchestrator/internal/httpapi"
+	"github.com/orchivio/orchestrator/internal/secretbox"
 )
 
 const (
@@ -28,10 +29,34 @@ type env struct {
 	token string
 }
 
+// newEnv serves the admin API; tenant acme is connected to linear and github
+// once created, and the adapters allow every key and repo.
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	adapters := map[string]string{"linear": "a:1", "github": "b:2"}
-	svc := admin.NewService(newMemStore(), adapters, nil, nil, "", time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	box, err := secretbox.New(testKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := newMemStore()
+	for _, c := range []admin.Connection{
+		{Kind: admin.KindTracker, Adapter: "linear", ExternalID: "ws-acme"},
+		{Kind: admin.KindCodeHost, Adapter: "github", ExternalID: "inst-acme"},
+	} {
+		c.ID, c.TenantSlug, c.Status = uuid.New(), "acme", admin.StatusActive
+		sealed, err := box.Seal([]byte("plain"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.SaveConnection(t.Context(), c, admin.SealedCredential{KeyID: box.KeyID(), Data: sealed}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return newEnvWith(t, admin.NewService(st, map[string]string{"linear": "a:1", "github": "b:2"}, box, &fakeConnector{}, "",
+		time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil))))
+}
+
+func newEnvWith(t *testing.T, svc *admin.Service) *env {
+	t.Helper()
 	_, plain, err := svc.IssueToken(t.Context(), "test", time.Hour)
 	if err != nil {
 		t.Fatal(err)
