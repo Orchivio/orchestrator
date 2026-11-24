@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package orchivio.plugin.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1";
 
 message Capabilities {
@@ -20,4 +22,50 @@ message Actor {
   string id = 1;
   string email = 2;
   string name = 3;
+}
+
+// Credential is an opaque per-tenant access record; only the adapter interprets data.
+message Credential {
+  bytes data = 1;
+  google.protobuf.Timestamp refresh_after = 2;
+}
+
+message BeginConnectRequest {
+  string tenant = 1;
+  string redirect_uri = 2;
+  string state = 3;
+}
+
+message BeginConnectResponse {
+  string url = 1;
+}
+
+message CompleteConnectRequest {
+  string redirect_uri = 1;
+  map<string, string> query = 2;
+}
+
+message CompleteConnectResponse {
+  Credential credential = 1;
+  string label = 2;
+  string external_id = 3;
+}
+
+message RefreshCredentialRequest {
+  Credential credential = 1;
+}
+
+message DisconnectRequest {
+  Credential credential = 1;
+}
+
+message DisconnectResponse {}
+
+message CheckAccessRequest {
+  repeated Credential credentials = 1;
+  repeated string items = 2; // tracker: team keys; codehost: "owner/name"
+}
+
+message CheckAccessResponse {
+  repeated string denied = 1;
 }

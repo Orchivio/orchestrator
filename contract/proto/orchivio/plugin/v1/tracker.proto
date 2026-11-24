@@ -11,10 +11,16 @@ service TrackerAdapter {
   rpc StreamEvents(StreamEventsRequest) returns (stream TrackerEvent);
   rpc GetTicket(GetTicketRequest) returns (Ticket);
   rpc PostComment(PostCommentRequest) returns (PostCommentResponse);
+  rpc BeginConnect(BeginConnectRequest) returns (BeginConnectResponse);
+  rpc CompleteConnect(CompleteConnectRequest) returns (CompleteConnectResponse);
+  rpc RefreshCredential(RefreshCredentialRequest) returns (Credential);
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+  rpc CheckAccess(CheckAccessRequest) returns (CheckAccessResponse);
 }
 
 message StreamEventsRequest {
   repeated string project_keys = 1; // tracker keys (Linear team keys) to watch; empty = invalid
+  Credential credential = 2;
 }
 
 message TrackerEvent {
@@ -34,6 +40,7 @@ message TrackerEvent {
 
 message GetTicketRequest {
   string ticket_ref = 1;
+  Credential credential = 2;
 }
 
 message Ticket {
@@ -48,6 +55,7 @@ message Ticket {
 message PostCommentRequest {
   string ticket_ref = 1;
   string body = 2;
+  Credential credential = 3;
 }
 
 message PostCommentResponse {
