@@ -38,7 +38,7 @@ func serve(logs io.Writer, header string) *httptest.ResponseRecorder {
 }
 
 func serveWith(st tokenStub, logs io.Writer, header string) *httptest.ResponseRecorder {
-	svc := admin.NewService(st, nil, time.Now, uuid.New, slog.New(slog.NewTextHandler(logs, nil)))
+	svc := admin.NewService(st, nil, nil, nil, "", time.Now, uuid.New, slog.New(slog.NewTextHandler(logs, nil)))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/tenants", nil)
 	if header != "" {

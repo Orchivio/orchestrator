@@ -197,7 +197,7 @@ func (m *memStore) DeleteProject(ctx context.Context, tenant string, id uuid.UUI
 func newTestService(t *testing.T) *admin.Service {
 	t.Helper()
 	adapters := map[string]string{"linear": "adapter-linear:7101", "github": "adapter-github:7201"}
-	return admin.NewService(newMemStore(), adapters, time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return admin.NewService(newMemStore(), adapters, nil, nil, "", time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func hasField(ve *admin.ValidationError, field string) bool {

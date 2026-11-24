@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/secretbox"
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
@@ -21,16 +22,22 @@ const (
 
 // Service validates writes, enforces immutability and notifies OnChange.
 type Service struct {
-	store    Store
-	adapters map[string]string // adapter name -> address
-	now      func() time.Time
-	newID    func() uuid.UUID
-	log      *slog.Logger
-	onChange func(context.Context) error
+	store     Store
+	adapters  map[string]string // adapter name -> address
+	box       *secretbox.Box    // nil: connections unavailable
+	connector Connector         // nil: connections unavailable
+	publicURL string
+	now       func() time.Time
+	newID     func() uuid.UUID
+	log       *slog.Logger
+	onChange  func(context.Context) error
 }
 
-func NewService(st Store, adapters map[string]string, now func() time.Time, newID func() uuid.UUID, log *slog.Logger) *Service {
-	return &Service{store: st, adapters: adapters, now: now, newID: newID, log: log}
+// NewService builds the service. box and conn may be nil; connection
+// operations then fail with ErrUnavailable.
+func NewService(st Store, adapters map[string]string, box *secretbox.Box, conn Connector, publicURL string,
+	now func() time.Time, newID func() uuid.UUID, log *slog.Logger) *Service {
+	return &Service{store: st, adapters: adapters, box: box, connector: conn, publicURL: publicURL, now: now, newID: newID, log: log}
 }
 
 // OnChange registers a hook run after every successful write. Its error is

@@ -215,7 +215,7 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(db.Close)
-	svc := admin.NewService(db, map[string]string{"linear": "tracker", "github": "codehost"}, time.Now, uuid.New, log)
+	svc := admin.NewService(db, map[string]string{"linear": "tracker", "github": "codehost"}, nil, nil, "", time.Now, uuid.New, log)
 	token := "orv_" + strings.ReplaceAll(uuid.NewString(), "-", "") + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if ok, err := svc.Bootstrap(ctx, token); err != nil || !ok {
 		t.Fatalf("bootstrap ok=%v err=%v", ok, err)

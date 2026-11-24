@@ -15,7 +15,7 @@ import (
 
 func tokenService(now func() time.Time) (*admin.Service, *memStore) {
 	st := newMemStore()
-	return admin.NewService(st, nil, now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil))), st
+	return admin.NewService(st, nil, nil, nil, "", now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil))), st
 }
 
 func TestIssuedTokenAuthenticatesUntilRevoked(t *testing.T) {

@@ -3,7 +3,7 @@ info:
   title: Orchivio Admin API
   version: 1.0.0
   description: >
-    Runtime administration of tenants, profiles, projects and API tokens.
+    Runtime administration of tenants, profiles, projects, connections and API tokens.
     Every single-resource response carries ETag "<version>"; PUT and DELETE
     honour If-Match "<version>" (absent means last writer wins).
     Errors are RFC 9457 problem details.
@@ -157,6 +157,57 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
+  /tenants/{slug}/connections:
+    parameters: [{$ref: "#/components/parameters/Slug"}]
+    get:
+      summary: List connections of a tenant (never includes credentials)
+      operationId: listConnections
+      responses:
+        "200": {description: Connections, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Connection"}}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /tenants/{slug}/connections/{adapter}/authorize:
+    parameters:
+      - {$ref: "#/components/parameters/Slug"}
+      - {name: adapter, in: path, required: true, schema: {type: string}, description: The tenant's trackerAdapter or codeHostAdapter}
+    post:
+      summary: Start connecting the tenant to an adapter
+      description: >
+        Returns the provider URL to open in a browser. The provider redirects to
+        {ORCHIVIO_PUBLIC_URL}/oauth/callback/{adapter}, which stores the
+        connection and shows a plain HTML page; that page needs no token, its
+        single-use state (valid 10 minutes) authorizes it.
+      operationId: authorizeConnection
+      responses:
+        "200":
+          description: Provider URL
+          content:
+            application/json:
+              schema: {type: object, required: [url], properties: {url: {type: string, format: uri}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Invalid"}
+        "502": {$ref: "#/components/responses/AdapterFailed"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /tenants/{slug}/connections/{id}:
+    parameters: [{$ref: "#/components/parameters/Slug"}, {$ref: "#/components/parameters/Id"}]
+    get:
+      summary: Get a connection
+      operationId: getConnection
+      responses:
+        "200": {description: Connection, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+    delete:
+      summary: Disconnect (soft delete; the adapter revokes at the provider on a best-effort basis)
+      operationId: deleteConnection
+      responses:
+        "204": {description: Disconnected}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
   /tokens:
     get:
       summary: List API tokens (never includes plaintext)
@@ -223,6 +274,8 @@ components:
     NotFound: {description: Resource does not exist, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Conflict: {description: Resource still in use, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     PreconditionFailed: {description: If-Match version is stale, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    AdapterFailed: {description: The adapter rejected or failed the request, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Unavailable: {description: Connections not configured or adapter unreachable, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Invalid: {description: Validation failed, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ValidationProblem"}}}}
   schemas:
     Tenant:
@@ -299,6 +352,15 @@ components:
         version: {type: integer, format: int64, readOnly: true}
         createdAt: {type: string, format: date-time, readOnly: true}
         updatedAt: {type: string, format: date-time, readOnly: true}
+    Connection:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [tracker, codehost]}
+        adapter: {type: string}
+        label: {type: string, description: Set by the adapter, e.g. workspace name or GitHub login}
+        status: {type: string, enum: [active, needs_reauth]}
+        createdAt: {type: string, format: date-time}
     Token:
       type: object
       properties:

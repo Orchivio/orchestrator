@@ -31,6 +31,8 @@ var AdminRoutes = []Route{
 	{"GET", "/tenants/{slug}/profiles/{id}"}, {"PUT", "/tenants/{slug}/profiles/{id}"}, {"DELETE", "/tenants/{slug}/profiles/{id}"},
 	{"GET", "/tenants/{slug}/projects"}, {"POST", "/tenants/{slug}/projects"},
 	{"GET", "/tenants/{slug}/projects/{id}"}, {"PUT", "/tenants/{slug}/projects/{id}"}, {"DELETE", "/tenants/{slug}/projects/{id}"},
+	{"GET", "/tenants/{slug}/connections"}, {"POST", "/tenants/{slug}/connections/{adapter}/authorize"},
+	{"GET", "/tenants/{slug}/connections/{id}"}, {"DELETE", "/tenants/{slug}/connections/{id}"},
 	{"GET", "/tokens"}, {"POST", "/tokens"}, {"DELETE", "/tokens/{id}"},
 }
 
@@ -50,8 +52,12 @@ func NewAdmin(svc *admin.Service, log *slog.Logger) http.Handler {
 		"DELETE /tenants/{slug}/profiles/{id}": a.deleteProfile,
 		"GET /tenants/{slug}/projects":         a.listProjects, "POST /tenants/{slug}/projects": a.createProject,
 		"GET /tenants/{slug}/projects/{id}": a.getProject, "PUT /tenants/{slug}/projects/{id}": a.putProject,
-		"DELETE /tenants/{slug}/projects/{id}": a.deleteProject,
-		"GET /tokens":                          a.listTokens, "POST /tokens": a.createToken, "DELETE /tokens/{id}": a.revokeToken,
+		"DELETE /tenants/{slug}/projects/{id}":                 a.deleteProject,
+		"GET /tenants/{slug}/connections":                      a.listConnections,
+		"POST /tenants/{slug}/connections/{adapter}/authorize": a.authorize,
+		"GET /tenants/{slug}/connections/{id}":                 a.getConnection,
+		"DELETE /tenants/{slug}/connections/{id}":              a.deleteConnection,
+		"GET /tokens": a.listTokens, "POST /tokens": a.createToken, "DELETE /tokens/{id}": a.revokeToken,
 	}
 	mux := http.NewServeMux()
 	for _, r := range AdminRoutes {
@@ -254,6 +260,14 @@ func (a *adminAPI) fail(w http.ResponseWriter, err error) {
 		writeProblem(w, http.StatusNotFound, "Not Found", "The resource does not exist.")
 	case errors.Is(err, admin.ErrInUse):
 		writeProblem(w, http.StatusConflict, "Conflict", "The resource is still in use.")
+	case errors.Is(err, admin.ErrConflict):
+		writeProblem(w, http.StatusConflict, "Conflict", "Already connected to another tenant.")
+	case errors.Is(err, admin.ErrUnavailable):
+		a.log.Warn("connections unavailable", "err", err)
+		writeProblem(w, http.StatusServiceUnavailable, "Service Unavailable", "Connections are not available right now.")
+	case errors.Is(err, admin.ErrAdapter), errors.Is(err, admin.ErrCredentialRejected), errors.Is(err, admin.ErrNotConnected):
+		a.log.Warn("adapter request failed", "err", err)
+		writeProblem(w, http.StatusBadGateway, "Bad Gateway", "The adapter could not handle the request.")
 	case errors.Is(err, admin.ErrVersionMismatch):
 		writeProblem(w, http.StatusPreconditionFailed, "Precondition Failed", "The resource was changed; reload and retry.")
 	default:

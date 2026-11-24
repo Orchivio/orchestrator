@@ -31,7 +31,7 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	adapters := map[string]string{"linear": "a:1", "github": "b:2"}
-	svc := admin.NewService(newMemStore(), adapters, time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := admin.NewService(newMemStore(), adapters, nil, nil, "", time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	_, plain, err := svc.IssueToken(t.Context(), "test", time.Hour)
 	if err != nil {
 		t.Fatal(err)

@@ -38,6 +38,7 @@ const (
 	defaultTokenTTL      = 2160 * time.Hour // 90 days
 	defaultLease         = 30 * time.Minute
 	shutdownTimeout      = 10 * time.Second
+	defaultPublicURL     = "http://localhost:8088"
 )
 
 func main() {
@@ -69,7 +70,7 @@ func run(parent context.Context, log *slog.Logger) error {
 	defer cancel()
 	// insecure gRPC, bind localhost; mTLS before remote workers.
 	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", "127.0.0.1:7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
-	publicURL := env("ORCHIVIO_PUBLIC_URL", "http://localhost:8088")
+	publicURL := env("ORCHIVIO_PUBLIC_URL", defaultPublicURL)
 
 	db, svc, err := openService(ctx, log)
 	if err != nil {
@@ -104,6 +105,7 @@ func run(parent context.Context, log *slog.Logger) error {
 	workerv1.RegisterWorkerServiceServer(gs, grpcapi.NewWorker(orch))
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/", httpapi.NewAdmin(svc, log))
+	mux.Handle("GET /oauth/callback/{adapter}", httpapi.NewCallback(svc, log))
 	mux.Handle("/", httpapi.NewTimeline(db))
 	hs := &http.Server{Addr: httpAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
@@ -138,6 +140,7 @@ func run(parent context.Context, log *slog.Logger) error {
 }
 
 // openService opens the store and builds the admin service from the environment.
+// ponytail: secret box and connector stay nil (connections answer 503) until Task 6 wires them.
 func openService(ctx context.Context, log *slog.Logger) (*store.Store, *admin.Service, error) {
 	dbURL, spec := os.Getenv("DATABASE_URL"), os.Getenv("ORCHIVIO_ADAPTERS")
 	if dbURL == "" || spec == "" {
@@ -151,7 +154,7 @@ func openService(ctx context.Context, log *slog.Logger) (*store.Store, *admin.Se
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
-	return db, admin.NewService(db, adapterAddrs, time.Now, uuid.New, log), nil
+	return db, admin.NewService(db, adapterAddrs, nil, nil, env("ORCHIVIO_PUBLIC_URL", defaultPublicURL), time.Now, uuid.New, log), nil
 }
 
 // bootstrap installs the optional first admin token. Errors never contain the token.
