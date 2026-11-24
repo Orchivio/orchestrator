@@ -173,6 +173,11 @@ SET label = EXCLUDED.label, status = EXCLUDED.status, key_id = EXCLUDED.key_id, 
 WHERE connections.tenant_slug = EXCLUDED.tenant_slug
 RETURNING *;
 
+-- name: DeleteOtherTrackerConnections :exec
+UPDATE connections SET deleted_at = sqlc.arg(deleted_at), updated_at = sqlc.arg(deleted_at)
+WHERE tenant_slug = sqlc.arg(tenant_slug) AND kind = 'tracker' AND deleted_at IS NULL
+  AND NOT (adapter = sqlc.arg(adapter) AND external_id = sqlc.arg(external_id));
+
 -- name: UpdateConnectionCredential :execrows
 UPDATE connections SET key_id = $2, credential = $3, refresh_after = $4, status = $5, updated_at = $6
 WHERE id = $1 AND deleted_at IS NULL;

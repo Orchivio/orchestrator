@@ -126,18 +126,19 @@ func (s *Service) Callback(ctx context.Context, adapter string, query map[string
 	if done.ExternalID == "" {
 		return Connection{}, fmt.Errorf("%w: %s returned no external id", ErrAdapter, adapter)
 	}
-	if kind == KindTracker {
-		if err := s.replaceTracker(ctx, tenant, done.ExternalID); err != nil {
-			return Connection{}, err
-		}
-	}
 	sealed, err := s.box.Seal(done.Data)
 	if err != nil {
 		return Connection{}, err
 	}
 	c := Connection{ID: s.newID(), TenantSlug: tenant, Kind: kind, Adapter: adapter, ExternalID: done.ExternalID,
 		Label: done.Label, Status: StatusActive, RefreshAfter: done.RefreshAfter}
-	saved, err := s.store.SaveConnection(ctx, c, SealedCredential{KeyID: s.box.KeyID(), Data: sealed})
+	cred := SealedCredential{KeyID: s.box.KeyID(), Data: sealed}
+	var saved Connection
+	if kind == KindTracker {
+		saved, err = s.switchTracker(ctx, c, cred)
+	} else {
+		saved, err = s.store.SaveConnection(ctx, c, cred)
+	}
 	if err != nil {
 		return Connection{}, err
 	}
@@ -171,31 +172,29 @@ func (s *Service) consumeState(ctx context.Context, adapter, state string) (tena
 	return tenant, kind, nil
 }
 
-// replaceTracker makes room for a tracker connection to another workspace:
-// refused while the tenant has live projects (their tickets belong to the old
-// workspace), otherwise the old connection is soft-deleted.
-func (s *Service) replaceTracker(ctx context.Context, tenant, externalID string) error {
-	conns, err := s.store.ListConnections(ctx, tenant)
+// switchTracker saves a tracker connection, replacing one to another
+// workspace atomically. Refused while the tenant has live projects: their
+// tickets belong to the old workspace.
+func (s *Service) switchTracker(ctx context.Context, c Connection, cred SealedCredential) (Connection, error) {
+	conns, err := s.store.ListConnections(ctx, c.TenantSlug)
 	if err != nil {
-		return err
+		return Connection{}, err
 	}
-	for _, c := range conns {
-		if c.Kind != KindTracker || c.ExternalID == externalID {
+	for _, old := range conns {
+		if old.Kind != KindTracker || old.ExternalID == c.ExternalID {
 			continue
 		}
-		projects, err := s.store.ListProjects(ctx, tenant)
+		projects, err := s.store.ListProjects(ctx, c.TenantSlug)
 		if err != nil {
-			return err
+			return Connection{}, err
 		}
 		if len(projects) > 0 {
-			return fmt.Errorf("tenant %s has projects on tracker connection %s: %w", tenant, c.ID, ErrInUse)
-		}
-		// ponytail: old credential is not revoked here; the new save may still fail with ErrConflict.
-		if err := s.store.DeleteConnection(ctx, tenant, c.ID); err != nil {
-			return err
+			return Connection{}, fmt.Errorf("tenant %s has projects on tracker connection %s: %w", c.TenantSlug, old.ID, ErrInUse)
 		}
 	}
-	return nil
+	// ponytail: the replaced credential is not revoked; revoking first would break the old
+	// connection if the save fails, and the provider call cannot join the transaction.
+	return s.store.ReplaceTrackerConnection(ctx, c.TenantSlug, c, cred)
 }
 
 func (s *Service) ListConnections(ctx context.Context, tenant string) ([]Connection, error) {

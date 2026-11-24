@@ -254,6 +254,33 @@ func TestTrackerSwitchBlockedWhileProjectsExist(t *testing.T) {
 	}
 }
 
+func TestFailedTrackerSwitchKeepsOldConnection(t *testing.T) {
+	e := newConnEnv(t)
+	old, err := e.connect(t, "linear", "ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.CreateTenant(ctx, admin.Tenant{Slug: "beta", TrackerAdapter: "linear", CodeHostAdapter: "github"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Authorize(ctx, "beta", "linear"); err != nil {
+		t.Fatal(err)
+	}
+	e.conn.completed = admin.Completed{Data: []byte("plain-ws2"), Label: "WS2", ExternalID: "ws2"}
+	if _, err := e.svc.Callback(ctx, "linear", map[string]string{"state": e.conn.state}); err != nil {
+		t.Fatal(err)
+	}
+	changes := 0
+	e.svc.OnChange(func(context.Context) error { changes++; return nil })
+	if _, err := e.connect(t, "linear", "ws2"); !errors.Is(err, admin.ErrConflict) {
+		t.Fatalf("err = %v", err)
+	}
+	conns, _ := e.svc.ListConnections(ctx, "acme")
+	if len(conns) != 1 || conns[0].ID != old.ID || conns[0].Status != admin.StatusActive || changes != 0 {
+		t.Fatalf("conns = %+v changes %d", conns, changes)
+	}
+}
+
 func (m *memStore) profileID() uuid.UUID {
 	for id := range m.profiles {
 		return id

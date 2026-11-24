@@ -522,6 +522,29 @@ func (q *Queries) DeleteConnection(ctx context.Context, arg DeleteConnectionPara
 	return result.RowsAffected(), nil
 }
 
+const deleteOtherTrackerConnections = `-- name: DeleteOtherTrackerConnections :exec
+UPDATE connections SET deleted_at = $1, updated_at = $1
+WHERE tenant_slug = $2 AND kind = 'tracker' AND deleted_at IS NULL
+  AND NOT (adapter = $3 AND external_id = $4)
+`
+
+type DeleteOtherTrackerConnectionsParams struct {
+	DeletedAt  *time.Time
+	TenantSlug string
+	Adapter    string
+	ExternalID string
+}
+
+func (q *Queries) DeleteOtherTrackerConnections(ctx context.Context, arg DeleteOtherTrackerConnectionsParams) error {
+	_, err := q.db.Exec(ctx, deleteOtherTrackerConnections,
+		arg.DeletedAt,
+		arg.TenantSlug,
+		arg.Adapter,
+		arg.ExternalID,
+	)
+	return err
+}
+
 const deleteProfile = `-- name: DeleteProfile :execrows
 UPDATE profiles SET deleted_at = $3, updated_at = $3, version = version + 1
 WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL AND ($4::bigint = 0 OR version = $4)

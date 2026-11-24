@@ -270,3 +270,34 @@ func newMigrator(t *testing.T, databaseURL string) *migrate.Migrate {
 	t.Cleanup(func() { _, _ = m.Close() })
 	return m
 }
+
+func TestReplaceTrackerConnectionIsAllOrNothing(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	a, b := newTenant(t, s), newTenant(t, s)
+	old, err := s.SaveConnection(ctx, connIn(a.Slug, admin.KindTracker, "linear", uuid.NewString()), cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := uuid.NewString()
+	if _, err := s.SaveConnection(ctx, connIn(b.Slug, admin.KindTracker, "linear", foreign), cred); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.ReplaceTrackerConnection(ctx, a.Slug, connIn(a.Slug, admin.KindTracker, "linear", foreign), cred)
+	if !errors.Is(err, admin.ErrConflict) {
+		t.Fatalf("err = %v", err)
+	}
+	if got, err := s.GetConnection(ctx, a.Slug, old.ID); err != nil || got.Status != admin.StatusActive {
+		t.Fatalf("old connection after failed switch: %+v %v", got, err)
+	}
+	next, err := s.ReplaceTrackerConnection(ctx, a.Slug, connIn(a.Slug, admin.KindTracker, "linear", uuid.NewString()), cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.ListConnections(ctx, a.Slug); err != nil || len(list) != 1 || list[0].ID != next.ID {
+		t.Fatalf("list = %+v %v", list, err)
+	}
+	again, err := s.ReplaceTrackerConnection(ctx, a.Slug, connIn(a.Slug, admin.KindTracker, "linear", next.ExternalID), cred)
+	if err != nil || again.ID != next.ID {
+		t.Fatalf("reconnect same workspace: %+v %v", again, err)
+	}
+}

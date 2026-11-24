@@ -304,6 +304,29 @@ func (m *memStore) ConnectionCredential(_ context.Context, id uuid.UUID) (admin.
 func (m *memStore) SaveConnection(_ context.Context, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.saveConnection(c, cred)
+}
+
+// ReplaceTrackerConnection is all or nothing: replaced rows revive on error.
+func (m *memStore) ReplaceTrackerConnection(_ context.Context, tenant string, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var replaced []*memConn
+	for _, mc := range m.live() {
+		if mc.c.TenantSlug == tenant && mc.c.Kind == admin.KindTracker && (mc.c.Adapter != c.Adapter || mc.c.ExternalID != c.ExternalID) {
+			mc.dead, replaced = true, append(replaced, mc)
+		}
+	}
+	saved, err := m.saveConnection(c, cred)
+	if err != nil {
+		for _, mc := range replaced {
+			mc.dead = false
+		}
+	}
+	return saved, err
+}
+
+func (m *memStore) saveConnection(c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
 	for _, mc := range m.live() {
 		if mc.c.Adapter == c.Adapter && mc.c.ExternalID == c.ExternalID {
 			if mc.c.TenantSlug != c.TenantSlug {

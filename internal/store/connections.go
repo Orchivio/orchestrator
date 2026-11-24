@@ -39,7 +39,31 @@ func (s *Store) ConnectionCredential(ctx context.Context, id uuid.UUID) (admin.S
 }
 
 func (s *Store) SaveConnection(ctx context.Context, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
-	row, err := s.q.SaveConnection(ctx, db.SaveConnectionParams{ID: c.ID, TenantSlug: c.TenantSlug, Kind: c.Kind,
+	return s.saveConnection(ctx, s.q, c, cred)
+}
+
+// ReplaceTrackerConnection soft-deletes the tenant's live tracker connection to
+// another workspace and saves c, in one transaction: on any error both roll back.
+func (s *Store) ReplaceTrackerConnection(ctx context.Context, tenant string, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return admin.Connection{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // no-op after commit
+	q, now := s.q.WithTx(tx), s.now()
+	if err := q.DeleteOtherTrackerConnections(ctx, db.DeleteOtherTrackerConnectionsParams{DeletedAt: &now,
+		TenantSlug: tenant, Adapter: c.Adapter, ExternalID: c.ExternalID}); err != nil {
+		return admin.Connection{}, err
+	}
+	saved, err := s.saveConnection(ctx, q, c, cred)
+	if err != nil {
+		return admin.Connection{}, err
+	}
+	return saved, tx.Commit(ctx)
+}
+
+func (s *Store) saveConnection(ctx context.Context, q *db.Queries, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
+	row, err := q.SaveConnection(ctx, db.SaveConnectionParams{ID: c.ID, TenantSlug: c.TenantSlug, Kind: c.Kind,
 		Adapter: c.Adapter, ExternalID: c.ExternalID, Label: c.Label, Status: c.Status, KeyID: cred.KeyID,
 		Credential: cred.Data, CreatedAt: s.now(), RefreshAfter: c.RefreshAfter})
 	if errors.Is(err, pgx.ErrNoRows) {

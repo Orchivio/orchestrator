@@ -132,6 +132,9 @@ type Store interface {
 	// (adapter, external id). ErrConflict if another tenant holds that external id;
 	// ErrTaken if the tenant already has a live tracker connection.
 	SaveConnection(ctx context.Context, c Connection, cred SealedCredential) (Connection, error)
+	// ReplaceTrackerConnection atomically soft-deletes the tenant's live tracker
+	// connection to another workspace and saves c like SaveConnection; on error nothing changes.
+	ReplaceTrackerConnection(ctx context.Context, tenant string, c Connection, cred SealedCredential) (Connection, error)
 	UpdateConnectionCredential(ctx context.Context, id uuid.UUID, cred SealedCredential, refreshAfter *time.Time, status string) error
 	DeleteConnection(ctx context.Context, tenant string, id uuid.UUID) error // soft
 	// ClaimDueConnections returns live, active rows with refresh_after <= now and
