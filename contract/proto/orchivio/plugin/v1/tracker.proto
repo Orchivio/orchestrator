@@ -11,6 +11,7 @@ service TrackerAdapter {
   rpc StreamEvents(StreamEventsRequest) returns (stream TrackerEvent);
   rpc GetTicket(GetTicketRequest) returns (Ticket);
   rpc PostComment(PostCommentRequest) returns (PostCommentResponse);
+  rpc SetStatus(SetStatusRequest) returns (SetStatusResponse);
   rpc BeginConnect(BeginConnectRequest) returns (BeginConnectResponse);
   rpc CompleteConnect(CompleteConnectRequest) returns (CompleteConnectResponse);
   rpc RefreshCredential(RefreshCredentialRequest) returns (Credential);
@@ -60,4 +61,14 @@ message PostCommentRequest {
 
 message PostCommentResponse {
   string comment_id = 1;
+}
+
+message SetStatusRequest {
+  string ticket_ref = 1;
+  string status = 2;
+  Credential credential = 3;
+}
+
+message SetStatusResponse {
+  bool changed = 1; // false: already in that status
 }

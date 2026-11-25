@@ -10,6 +10,8 @@ option go_package = "github.com/orchivio/orchestrator/contract/gen/orchivio/plug
 service CodeHostAdapter {
   rpc GetCapabilities(GetCapabilitiesRequest) returns (Capabilities);
   rpc IssueRepoCredentials(IssueRepoCredentialsRequest) returns (RepoCredentials);
+  rpc StreamEvents(StreamCodeHostEventsRequest) returns (stream CodeHostEvent);
+  rpc RevokeRepoCredentials(RevokeRepoCredentialsRequest) returns (RevokeRepoCredentialsResponse);
   rpc OpenPullRequest(OpenPullRequestRequest) returns (PullRequest);
   rpc BeginConnect(BeginConnectRequest) returns (BeginConnectResponse);
   rpc CompleteConnect(CompleteConnectRequest) returns (CompleteConnectResponse);
@@ -29,6 +31,14 @@ message RepoCredentials {
   string token = 2;
   google.protobuf.Timestamp expires_at = 3;
   map<string, string> clone_urls = 4; // repo -> https URL without credentials
+  map<string, RepoToken> tokens = 5; // repo -> token; empty = single token above applies
+  string credential_id = 6; // what the adapter needs to revoke
+}
+
+message RepoToken {
+  string username = 1;
+  string token = 2;
+  google.protobuf.Timestamp expires_at = 3;
 }
 
 message OpenPullRequestRequest {
@@ -44,3 +54,30 @@ message PullRequest {
   string url = 1;
   int64 number = 2;
 }
+
+message StreamCodeHostEventsRequest {
+  repeated string repos = 1; // full paths
+  repeated Credential credentials = 2;
+}
+
+message CodeHostEvent {
+  string external_id = 1; // dedup key
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    REVIEW_COMMENTED = 1;
+  }
+  Kind kind = 2;
+  string repo = 3;   // full path, e.g. "group/sub/project"
+  string branch = 4; // source branch of the PR/MR
+  string pr_url = 5;
+  Actor actor = 6;
+  string body = 7; // Markdown
+  bool mentions_bot = 8;
+}
+
+message RevokeRepoCredentialsRequest {
+  string credential_id = 1;
+  repeated Credential credentials = 2;
+}
+
+message RevokeRepoCredentialsResponse {}

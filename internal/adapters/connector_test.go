@@ -26,7 +26,6 @@ var connectRefresh = time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
 // connectServer answers the connection RPCs; name tells tracker and code host apart.
 type connectServer struct {
 	pluginv1.UnimplementedTrackerAdapterServer
-	pluginv1.UnimplementedCodeHostAdapterServer
 	name        string
 	completeErr error
 	disconnects [][]byte
@@ -67,13 +66,44 @@ func (s *connectServer) CheckAccess(_ context.Context, r *pluginv1.CheckAccessRe
 	return &pluginv1.CheckAccessResponse{Denied: denied}, nil
 }
 
+// codeHostServer exposes connectServer as a code host; a separate type is needed
+// because both services declare StreamEvents with different signatures.
+type codeHostServer struct {
+	pluginv1.UnimplementedCodeHostAdapterServer
+	s *connectServer
+}
+
+func (c codeHostServer) GetCapabilities(ctx context.Context, r *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
+	return c.s.GetCapabilities(ctx, r)
+}
+
+func (c codeHostServer) BeginConnect(ctx context.Context, r *pluginv1.BeginConnectRequest) (*pluginv1.BeginConnectResponse, error) {
+	return c.s.BeginConnect(ctx, r)
+}
+
+func (c codeHostServer) CompleteConnect(ctx context.Context, r *pluginv1.CompleteConnectRequest) (*pluginv1.CompleteConnectResponse, error) {
+	return c.s.CompleteConnect(ctx, r)
+}
+
+func (c codeHostServer) RefreshCredential(ctx context.Context, r *pluginv1.RefreshCredentialRequest) (*pluginv1.Credential, error) {
+	return c.s.RefreshCredential(ctx, r)
+}
+
+func (c codeHostServer) Disconnect(ctx context.Context, r *pluginv1.DisconnectRequest) (*pluginv1.DisconnectResponse, error) {
+	return c.s.Disconnect(ctx, r)
+}
+
+func (c codeHostServer) CheckAccess(ctx context.Context, r *pluginv1.CheckAccessRequest) (*pluginv1.CheckAccessResponse, error) {
+	return c.s.CheckAccess(ctx, r)
+}
+
 func newTestConnector(t *testing.T) (admin.Connector, *connectServer, *connectServer) {
 	t.Helper()
 	tr, ch := &connectServer{name: "linear"}, &connectServer{name: "github"}
 	lisT, lisC := bufconn.Listen(1<<20), bufconn.Listen(1<<20)
 	srvT, srvC := grpc.NewServer(), grpc.NewServer()
 	pluginv1.RegisterTrackerAdapterServer(srvT, tr)
-	pluginv1.RegisterCodeHostAdapterServer(srvC, ch)
+	pluginv1.RegisterCodeHostAdapterServer(srvC, codeHostServer{s: ch})
 	go func() { _ = srvT.Serve(lisT) }()
 	go func() { _ = srvC.Serve(lisC) }()
 	t.Cleanup(srvT.Stop)

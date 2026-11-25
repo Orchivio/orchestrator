@@ -22,6 +22,52 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type CodeHostEvent_Kind int32
+
+const (
+	CodeHostEvent_KIND_UNSPECIFIED CodeHostEvent_Kind = 0
+	CodeHostEvent_REVIEW_COMMENTED CodeHostEvent_Kind = 1
+)
+
+// Enum value maps for CodeHostEvent_Kind.
+var (
+	CodeHostEvent_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "REVIEW_COMMENTED",
+	}
+	CodeHostEvent_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"REVIEW_COMMENTED": 1,
+	}
+)
+
+func (x CodeHostEvent_Kind) Enum() *CodeHostEvent_Kind {
+	p := new(CodeHostEvent_Kind)
+	*p = x
+	return p
+}
+
+func (x CodeHostEvent_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CodeHostEvent_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_orchivio_plugin_v1_codehost_proto_enumTypes[0].Descriptor()
+}
+
+func (CodeHostEvent_Kind) Type() protoreflect.EnumType {
+	return &file_orchivio_plugin_v1_codehost_proto_enumTypes[0]
+}
+
+func (x CodeHostEvent_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CodeHostEvent_Kind.Descriptor instead.
+func (CodeHostEvent_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{6, 0}
+}
+
 type IssueRepoCredentialsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repos         []string               `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"` // "owner/name"
@@ -88,6 +134,8 @@ type RepoCredentials struct {
 	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	CloneUrls     map[string]string      `protobuf:"bytes,4,rep,name=clone_urls,json=cloneUrls,proto3" json:"clone_urls,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // repo -> https URL without credentials
+	Tokens        map[string]*RepoToken  `protobuf:"bytes,5,rep,name=tokens,proto3" json:"tokens,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`                        // repo -> token; empty = single token above applies
+	CredentialId  string                 `protobuf:"bytes,6,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`                                                                  // what the adapter needs to revoke
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -150,6 +198,80 @@ func (x *RepoCredentials) GetCloneUrls() map[string]string {
 	return nil
 }
 
+func (x *RepoCredentials) GetTokens() map[string]*RepoToken {
+	if x != nil {
+		return x.Tokens
+	}
+	return nil
+}
+
+func (x *RepoCredentials) GetCredentialId() string {
+	if x != nil {
+		return x.CredentialId
+	}
+	return ""
+}
+
+type RepoToken struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RepoToken) Reset() {
+	*x = RepoToken{}
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RepoToken) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RepoToken) ProtoMessage() {}
+
+func (x *RepoToken) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RepoToken.ProtoReflect.Descriptor instead.
+func (*RepoToken) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RepoToken) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *RepoToken) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *RepoToken) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 type OpenPullRequestRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
@@ -164,7 +286,7 @@ type OpenPullRequestRequest struct {
 
 func (x *OpenPullRequestRequest) Reset() {
 	*x = OpenPullRequestRequest{}
-	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[2]
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -176,7 +298,7 @@ func (x *OpenPullRequestRequest) String() string {
 func (*OpenPullRequestRequest) ProtoMessage() {}
 
 func (x *OpenPullRequestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[2]
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -189,7 +311,7 @@ func (x *OpenPullRequestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenPullRequestRequest.ProtoReflect.Descriptor instead.
 func (*OpenPullRequestRequest) Descriptor() ([]byte, []int) {
-	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{2}
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *OpenPullRequestRequest) GetRepo() string {
@@ -244,7 +366,7 @@ type PullRequest struct {
 
 func (x *PullRequest) Reset() {
 	*x = PullRequest{}
-	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[3]
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -256,7 +378,7 @@ func (x *PullRequest) String() string {
 func (*PullRequest) ProtoMessage() {}
 
 func (x *PullRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[3]
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -269,7 +391,7 @@ func (x *PullRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequest.ProtoReflect.Descriptor instead.
 func (*PullRequest) Descriptor() ([]byte, []int) {
-	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{3}
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PullRequest) GetUrl() string {
@@ -286,6 +408,246 @@ func (x *PullRequest) GetNumber() int64 {
 	return 0
 }
 
+type StreamCodeHostEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repos         []string               `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"` // full paths
+	Credentials   []*Credential          `protobuf:"bytes,2,rep,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamCodeHostEventsRequest) Reset() {
+	*x = StreamCodeHostEventsRequest{}
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamCodeHostEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamCodeHostEventsRequest) ProtoMessage() {}
+
+func (x *StreamCodeHostEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamCodeHostEventsRequest.ProtoReflect.Descriptor instead.
+func (*StreamCodeHostEventsRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *StreamCodeHostEventsRequest) GetRepos() []string {
+	if x != nil {
+		return x.Repos
+	}
+	return nil
+}
+
+func (x *StreamCodeHostEventsRequest) GetCredentials() []*Credential {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type CodeHostEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId,proto3" json:"external_id,omitempty"` // dedup key
+	Kind          CodeHostEvent_Kind     `protobuf:"varint,2,opt,name=kind,proto3,enum=orchivio.plugin.v1.CodeHostEvent_Kind" json:"kind,omitempty"`
+	Repo          string                 `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`     // full path, e.g. "group/sub/project"
+	Branch        string                 `protobuf:"bytes,4,opt,name=branch,proto3" json:"branch,omitempty"` // source branch of the PR/MR
+	PrUrl         string                 `protobuf:"bytes,5,opt,name=pr_url,json=prUrl,proto3" json:"pr_url,omitempty"`
+	Actor         *Actor                 `protobuf:"bytes,6,opt,name=actor,proto3" json:"actor,omitempty"`
+	Body          string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"` // Markdown
+	MentionsBot   bool                   `protobuf:"varint,8,opt,name=mentions_bot,json=mentionsBot,proto3" json:"mentions_bot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CodeHostEvent) Reset() {
+	*x = CodeHostEvent{}
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CodeHostEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CodeHostEvent) ProtoMessage() {}
+
+func (x *CodeHostEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CodeHostEvent.ProtoReflect.Descriptor instead.
+func (*CodeHostEvent) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CodeHostEvent) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *CodeHostEvent) GetKind() CodeHostEvent_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return CodeHostEvent_KIND_UNSPECIFIED
+}
+
+func (x *CodeHostEvent) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *CodeHostEvent) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *CodeHostEvent) GetPrUrl() string {
+	if x != nil {
+		return x.PrUrl
+	}
+	return ""
+}
+
+func (x *CodeHostEvent) GetActor() *Actor {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *CodeHostEvent) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *CodeHostEvent) GetMentionsBot() bool {
+	if x != nil {
+		return x.MentionsBot
+	}
+	return false
+}
+
+type RevokeRepoCredentialsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CredentialId  string                 `protobuf:"bytes,1,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`
+	Credentials   []*Credential          `protobuf:"bytes,2,rep,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeRepoCredentialsRequest) Reset() {
+	*x = RevokeRepoCredentialsRequest{}
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeRepoCredentialsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeRepoCredentialsRequest) ProtoMessage() {}
+
+func (x *RevokeRepoCredentialsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeRepoCredentialsRequest.ProtoReflect.Descriptor instead.
+func (*RevokeRepoCredentialsRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RevokeRepoCredentialsRequest) GetCredentialId() string {
+	if x != nil {
+		return x.CredentialId
+	}
+	return ""
+}
+
+func (x *RevokeRepoCredentialsRequest) GetCredentials() []*Credential {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type RevokeRepoCredentialsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeRepoCredentialsResponse) Reset() {
+	*x = RevokeRepoCredentialsResponse{}
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeRepoCredentialsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeRepoCredentialsResponse) ProtoMessage() {}
+
+func (x *RevokeRepoCredentialsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_codehost_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeRepoCredentialsResponse.ProtoReflect.Descriptor instead.
+func (*RevokeRepoCredentialsResponse) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_codehost_proto_rawDescGZIP(), []int{8}
+}
+
 var File_orchivio_plugin_v1_codehost_proto protoreflect.FileDescriptor
 
 const file_orchivio_plugin_v1_codehost_proto_rawDesc = "" +
@@ -294,17 +656,27 @@ const file_orchivio_plugin_v1_codehost_proto_rawDesc = "" +
 	"\x1bIssueRepoCredentialsRequest\x12\x14\n" +
 	"\x05repos\x18\x01 \x03(\tR\x05repos\x12\x14\n" +
 	"\x05write\x18\x02 \x01(\bR\x05write\x12@\n" +
-	"\vcredentials\x18\x03 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"\x8f\x02\n" +
+	"\vcredentials\x18\x03 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"\xd7\x03\n" +
 	"\x0fRepoCredentials\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x129\n" +
 	"\n" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12Q\n" +
 	"\n" +
-	"clone_urls\x18\x04 \x03(\v22.orchivio.plugin.v1.RepoCredentials.CloneUrlsEntryR\tcloneUrls\x1a<\n" +
+	"clone_urls\x18\x04 \x03(\v22.orchivio.plugin.v1.RepoCredentials.CloneUrlsEntryR\tcloneUrls\x12G\n" +
+	"\x06tokens\x18\x05 \x03(\v2/.orchivio.plugin.v1.RepoCredentials.TokensEntryR\x06tokens\x12#\n" +
+	"\rcredential_id\x18\x06 \x01(\tR\fcredentialId\x1a<\n" +
 	"\x0eCloneUrlsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc0\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aX\n" +
+	"\vTokensEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
+	"\x05value\x18\x02 \x01(\v2\x1d.orchivio.plugin.v1.RepoTokenR\x05value:\x028\x01\"x\n" +
+	"\tRepoToken\x12\x1a\n" +
+	"\busername\x18\x01 \x01(\tR\busername\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xc0\x01\n" +
 	"\x16OpenPullRequestRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
 	"\x04base\x18\x02 \x01(\tR\x04base\x12\x12\n" +
@@ -314,10 +686,32 @@ const file_orchivio_plugin_v1_codehost_proto_rawDesc = "" +
 	"\vcredentials\x18\x06 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"7\n" +
 	"\vPullRequest\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
-	"\x06number\x18\x02 \x01(\x03R\x06number2\xaf\x06\n" +
+	"\x06number\x18\x02 \x01(\x03R\x06number\"u\n" +
+	"\x1bStreamCodeHostEventsRequest\x12\x14\n" +
+	"\x05repos\x18\x01 \x03(\tR\x05repos\x12@\n" +
+	"\vcredentials\x18\x02 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"\xcb\x02\n" +
+	"\rCodeHostEvent\x12\x1f\n" +
+	"\vexternal_id\x18\x01 \x01(\tR\n" +
+	"externalId\x12:\n" +
+	"\x04kind\x18\x02 \x01(\x0e2&.orchivio.plugin.v1.CodeHostEvent.KindR\x04kind\x12\x12\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\x12\x16\n" +
+	"\x06branch\x18\x04 \x01(\tR\x06branch\x12\x15\n" +
+	"\x06pr_url\x18\x05 \x01(\tR\x05prUrl\x12/\n" +
+	"\x05actor\x18\x06 \x01(\v2\x19.orchivio.plugin.v1.ActorR\x05actor\x12\x12\n" +
+	"\x04body\x18\a \x01(\tR\x04body\x12!\n" +
+	"\fmentions_bot\x18\b \x01(\bR\vmentionsBot\"2\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10REVIEW_COMMENTED\x10\x01\"\x85\x01\n" +
+	"\x1cRevokeRepoCredentialsRequest\x12#\n" +
+	"\rcredential_id\x18\x01 \x01(\tR\fcredentialId\x12@\n" +
+	"\vcredentials\x18\x02 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"\x1f\n" +
+	"\x1dRevokeRepoCredentialsResponse2\x93\b\n" +
 	"\x0fCodeHostAdapter\x12_\n" +
 	"\x0fGetCapabilities\x12*.orchivio.plugin.v1.GetCapabilitiesRequest\x1a .orchivio.plugin.v1.Capabilities\x12l\n" +
-	"\x14IssueRepoCredentials\x12/.orchivio.plugin.v1.IssueRepoCredentialsRequest\x1a#.orchivio.plugin.v1.RepoCredentials\x12^\n" +
+	"\x14IssueRepoCredentials\x12/.orchivio.plugin.v1.IssueRepoCredentialsRequest\x1a#.orchivio.plugin.v1.RepoCredentials\x12d\n" +
+	"\fStreamEvents\x12/.orchivio.plugin.v1.StreamCodeHostEventsRequest\x1a!.orchivio.plugin.v1.CodeHostEvent0\x01\x12|\n" +
+	"\x15RevokeRepoCredentials\x120.orchivio.plugin.v1.RevokeRepoCredentialsRequest\x1a1.orchivio.plugin.v1.RevokeRepoCredentialsResponse\x12^\n" +
 	"\x0fOpenPullRequest\x12*.orchivio.plugin.v1.OpenPullRequestRequest\x1a\x1f.orchivio.plugin.v1.PullRequest\x12a\n" +
 	"\fBeginConnect\x12'.orchivio.plugin.v1.BeginConnectRequest\x1a(.orchivio.plugin.v1.BeginConnectResponse\x12j\n" +
 	"\x0fCompleteConnect\x12*.orchivio.plugin.v1.CompleteConnectRequest\x1a+.orchivio.plugin.v1.CompleteConnectResponse\x12a\n" +
@@ -338,53 +732,73 @@ func file_orchivio_plugin_v1_codehost_proto_rawDescGZIP() []byte {
 	return file_orchivio_plugin_v1_codehost_proto_rawDescData
 }
 
-var file_orchivio_plugin_v1_codehost_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_orchivio_plugin_v1_codehost_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_orchivio_plugin_v1_codehost_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_orchivio_plugin_v1_codehost_proto_goTypes = []any{
-	(*IssueRepoCredentialsRequest)(nil), // 0: orchivio.plugin.v1.IssueRepoCredentialsRequest
-	(*RepoCredentials)(nil),             // 1: orchivio.plugin.v1.RepoCredentials
-	(*OpenPullRequestRequest)(nil),      // 2: orchivio.plugin.v1.OpenPullRequestRequest
-	(*PullRequest)(nil),                 // 3: orchivio.plugin.v1.PullRequest
-	nil,                                 // 4: orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
-	(*Credential)(nil),                  // 5: orchivio.plugin.v1.Credential
-	(*timestamppb.Timestamp)(nil),       // 6: google.protobuf.Timestamp
-	(*GetCapabilitiesRequest)(nil),      // 7: orchivio.plugin.v1.GetCapabilitiesRequest
-	(*BeginConnectRequest)(nil),         // 8: orchivio.plugin.v1.BeginConnectRequest
-	(*CompleteConnectRequest)(nil),      // 9: orchivio.plugin.v1.CompleteConnectRequest
-	(*RefreshCredentialRequest)(nil),    // 10: orchivio.plugin.v1.RefreshCredentialRequest
-	(*DisconnectRequest)(nil),           // 11: orchivio.plugin.v1.DisconnectRequest
-	(*CheckAccessRequest)(nil),          // 12: orchivio.plugin.v1.CheckAccessRequest
-	(*Capabilities)(nil),                // 13: orchivio.plugin.v1.Capabilities
-	(*BeginConnectResponse)(nil),        // 14: orchivio.plugin.v1.BeginConnectResponse
-	(*CompleteConnectResponse)(nil),     // 15: orchivio.plugin.v1.CompleteConnectResponse
-	(*DisconnectResponse)(nil),          // 16: orchivio.plugin.v1.DisconnectResponse
-	(*CheckAccessResponse)(nil),         // 17: orchivio.plugin.v1.CheckAccessResponse
+	(CodeHostEvent_Kind)(0),               // 0: orchivio.plugin.v1.CodeHostEvent.Kind
+	(*IssueRepoCredentialsRequest)(nil),   // 1: orchivio.plugin.v1.IssueRepoCredentialsRequest
+	(*RepoCredentials)(nil),               // 2: orchivio.plugin.v1.RepoCredentials
+	(*RepoToken)(nil),                     // 3: orchivio.plugin.v1.RepoToken
+	(*OpenPullRequestRequest)(nil),        // 4: orchivio.plugin.v1.OpenPullRequestRequest
+	(*PullRequest)(nil),                   // 5: orchivio.plugin.v1.PullRequest
+	(*StreamCodeHostEventsRequest)(nil),   // 6: orchivio.plugin.v1.StreamCodeHostEventsRequest
+	(*CodeHostEvent)(nil),                 // 7: orchivio.plugin.v1.CodeHostEvent
+	(*RevokeRepoCredentialsRequest)(nil),  // 8: orchivio.plugin.v1.RevokeRepoCredentialsRequest
+	(*RevokeRepoCredentialsResponse)(nil), // 9: orchivio.plugin.v1.RevokeRepoCredentialsResponse
+	nil,                                   // 10: orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
+	nil,                                   // 11: orchivio.plugin.v1.RepoCredentials.TokensEntry
+	(*Credential)(nil),                    // 12: orchivio.plugin.v1.Credential
+	(*timestamppb.Timestamp)(nil),         // 13: google.protobuf.Timestamp
+	(*Actor)(nil),                         // 14: orchivio.plugin.v1.Actor
+	(*GetCapabilitiesRequest)(nil),        // 15: orchivio.plugin.v1.GetCapabilitiesRequest
+	(*BeginConnectRequest)(nil),           // 16: orchivio.plugin.v1.BeginConnectRequest
+	(*CompleteConnectRequest)(nil),        // 17: orchivio.plugin.v1.CompleteConnectRequest
+	(*RefreshCredentialRequest)(nil),      // 18: orchivio.plugin.v1.RefreshCredentialRequest
+	(*DisconnectRequest)(nil),             // 19: orchivio.plugin.v1.DisconnectRequest
+	(*CheckAccessRequest)(nil),            // 20: orchivio.plugin.v1.CheckAccessRequest
+	(*Capabilities)(nil),                  // 21: orchivio.plugin.v1.Capabilities
+	(*BeginConnectResponse)(nil),          // 22: orchivio.plugin.v1.BeginConnectResponse
+	(*CompleteConnectResponse)(nil),       // 23: orchivio.plugin.v1.CompleteConnectResponse
+	(*DisconnectResponse)(nil),            // 24: orchivio.plugin.v1.DisconnectResponse
+	(*CheckAccessResponse)(nil),           // 25: orchivio.plugin.v1.CheckAccessResponse
 }
 var file_orchivio_plugin_v1_codehost_proto_depIdxs = []int32{
-	5,  // 0: orchivio.plugin.v1.IssueRepoCredentialsRequest.credentials:type_name -> orchivio.plugin.v1.Credential
-	6,  // 1: orchivio.plugin.v1.RepoCredentials.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 2: orchivio.plugin.v1.RepoCredentials.clone_urls:type_name -> orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
-	5,  // 3: orchivio.plugin.v1.OpenPullRequestRequest.credentials:type_name -> orchivio.plugin.v1.Credential
-	7,  // 4: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:input_type -> orchivio.plugin.v1.GetCapabilitiesRequest
-	0,  // 5: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:input_type -> orchivio.plugin.v1.IssueRepoCredentialsRequest
-	2,  // 6: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:input_type -> orchivio.plugin.v1.OpenPullRequestRequest
-	8,  // 7: orchivio.plugin.v1.CodeHostAdapter.BeginConnect:input_type -> orchivio.plugin.v1.BeginConnectRequest
-	9,  // 8: orchivio.plugin.v1.CodeHostAdapter.CompleteConnect:input_type -> orchivio.plugin.v1.CompleteConnectRequest
-	10, // 9: orchivio.plugin.v1.CodeHostAdapter.RefreshCredential:input_type -> orchivio.plugin.v1.RefreshCredentialRequest
-	11, // 10: orchivio.plugin.v1.CodeHostAdapter.Disconnect:input_type -> orchivio.plugin.v1.DisconnectRequest
-	12, // 11: orchivio.plugin.v1.CodeHostAdapter.CheckAccess:input_type -> orchivio.plugin.v1.CheckAccessRequest
-	13, // 12: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:output_type -> orchivio.plugin.v1.Capabilities
-	1,  // 13: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:output_type -> orchivio.plugin.v1.RepoCredentials
-	3,  // 14: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:output_type -> orchivio.plugin.v1.PullRequest
-	14, // 15: orchivio.plugin.v1.CodeHostAdapter.BeginConnect:output_type -> orchivio.plugin.v1.BeginConnectResponse
-	15, // 16: orchivio.plugin.v1.CodeHostAdapter.CompleteConnect:output_type -> orchivio.plugin.v1.CompleteConnectResponse
-	5,  // 17: orchivio.plugin.v1.CodeHostAdapter.RefreshCredential:output_type -> orchivio.plugin.v1.Credential
-	16, // 18: orchivio.plugin.v1.CodeHostAdapter.Disconnect:output_type -> orchivio.plugin.v1.DisconnectResponse
-	17, // 19: orchivio.plugin.v1.CodeHostAdapter.CheckAccess:output_type -> orchivio.plugin.v1.CheckAccessResponse
-	12, // [12:20] is the sub-list for method output_type
-	4,  // [4:12] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	12, // 0: orchivio.plugin.v1.IssueRepoCredentialsRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	13, // 1: orchivio.plugin.v1.RepoCredentials.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 2: orchivio.plugin.v1.RepoCredentials.clone_urls:type_name -> orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
+	11, // 3: orchivio.plugin.v1.RepoCredentials.tokens:type_name -> orchivio.plugin.v1.RepoCredentials.TokensEntry
+	13, // 4: orchivio.plugin.v1.RepoToken.expires_at:type_name -> google.protobuf.Timestamp
+	12, // 5: orchivio.plugin.v1.OpenPullRequestRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	12, // 6: orchivio.plugin.v1.StreamCodeHostEventsRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	0,  // 7: orchivio.plugin.v1.CodeHostEvent.kind:type_name -> orchivio.plugin.v1.CodeHostEvent.Kind
+	14, // 8: orchivio.plugin.v1.CodeHostEvent.actor:type_name -> orchivio.plugin.v1.Actor
+	12, // 9: orchivio.plugin.v1.RevokeRepoCredentialsRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	3,  // 10: orchivio.plugin.v1.RepoCredentials.TokensEntry.value:type_name -> orchivio.plugin.v1.RepoToken
+	15, // 11: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:input_type -> orchivio.plugin.v1.GetCapabilitiesRequest
+	1,  // 12: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:input_type -> orchivio.plugin.v1.IssueRepoCredentialsRequest
+	6,  // 13: orchivio.plugin.v1.CodeHostAdapter.StreamEvents:input_type -> orchivio.plugin.v1.StreamCodeHostEventsRequest
+	8,  // 14: orchivio.plugin.v1.CodeHostAdapter.RevokeRepoCredentials:input_type -> orchivio.plugin.v1.RevokeRepoCredentialsRequest
+	4,  // 15: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:input_type -> orchivio.plugin.v1.OpenPullRequestRequest
+	16, // 16: orchivio.plugin.v1.CodeHostAdapter.BeginConnect:input_type -> orchivio.plugin.v1.BeginConnectRequest
+	17, // 17: orchivio.plugin.v1.CodeHostAdapter.CompleteConnect:input_type -> orchivio.plugin.v1.CompleteConnectRequest
+	18, // 18: orchivio.plugin.v1.CodeHostAdapter.RefreshCredential:input_type -> orchivio.plugin.v1.RefreshCredentialRequest
+	19, // 19: orchivio.plugin.v1.CodeHostAdapter.Disconnect:input_type -> orchivio.plugin.v1.DisconnectRequest
+	20, // 20: orchivio.plugin.v1.CodeHostAdapter.CheckAccess:input_type -> orchivio.plugin.v1.CheckAccessRequest
+	21, // 21: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:output_type -> orchivio.plugin.v1.Capabilities
+	2,  // 22: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:output_type -> orchivio.plugin.v1.RepoCredentials
+	7,  // 23: orchivio.plugin.v1.CodeHostAdapter.StreamEvents:output_type -> orchivio.plugin.v1.CodeHostEvent
+	9,  // 24: orchivio.plugin.v1.CodeHostAdapter.RevokeRepoCredentials:output_type -> orchivio.plugin.v1.RevokeRepoCredentialsResponse
+	5,  // 25: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:output_type -> orchivio.plugin.v1.PullRequest
+	22, // 26: orchivio.plugin.v1.CodeHostAdapter.BeginConnect:output_type -> orchivio.plugin.v1.BeginConnectResponse
+	23, // 27: orchivio.plugin.v1.CodeHostAdapter.CompleteConnect:output_type -> orchivio.plugin.v1.CompleteConnectResponse
+	12, // 28: orchivio.plugin.v1.CodeHostAdapter.RefreshCredential:output_type -> orchivio.plugin.v1.Credential
+	24, // 29: orchivio.plugin.v1.CodeHostAdapter.Disconnect:output_type -> orchivio.plugin.v1.DisconnectResponse
+	25, // 30: orchivio.plugin.v1.CodeHostAdapter.CheckAccess:output_type -> orchivio.plugin.v1.CheckAccessResponse
+	21, // [21:31] is the sub-list for method output_type
+	11, // [11:21] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_orchivio_plugin_v1_codehost_proto_init() }
@@ -398,13 +812,14 @@ func file_orchivio_plugin_v1_codehost_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchivio_plugin_v1_codehost_proto_rawDesc), len(file_orchivio_plugin_v1_codehost_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   5,
+			NumEnums:      1,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_orchivio_plugin_v1_codehost_proto_goTypes,
 		DependencyIndexes: file_orchivio_plugin_v1_codehost_proto_depIdxs,
+		EnumInfos:         file_orchivio_plugin_v1_codehost_proto_enumTypes,
 		MessageInfos:      file_orchivio_plugin_v1_codehost_proto_msgTypes,
 	}.Build()
 	File_orchivio_plugin_v1_codehost_proto = out.File
