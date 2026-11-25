@@ -82,6 +82,9 @@ func (s *Service) ListTenants(ctx context.Context) ([]Tenant, error) { return s.
 
 // ListTenantsFor lists the tenants p may see: all for an instance admin, its own for a tenant admin.
 func (s *Service) ListTenantsFor(ctx context.Context, p Principal) ([]Tenant, error) {
+	if err := p.authorized(); err != nil {
+		return nil, err
+	}
 	if p.IsInstanceAdmin() {
 		return s.ListTenants(ctx)
 	}

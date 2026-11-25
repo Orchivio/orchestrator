@@ -111,7 +111,16 @@ type Principal struct{ Scope, TenantSlug, Role string }
 // no admin access (unknown scope or role, or a tenant token without tenant).
 func PrincipalOf(t Token) (Principal, bool) {
 	p := Principal{Scope: t.Scope, TenantSlug: t.TenantSlug, Role: t.Role}
-	return p, p.Role == RoleAdmin && (p.IsInstanceAdmin() || p.Scope == ScopeTenant && p.TenantSlug != "")
+	return p, p.authorized() == nil
+}
+
+// authorized fails closed: only an instance admin or a tenant admin of a named
+// tenant has any rights; every other principal (the zero value included) is ErrForbidden.
+func (p Principal) authorized() error {
+	if p.IsInstanceAdmin() || p.Scope == ScopeTenant && p.Role == RoleAdmin && p.TenantSlug != "" {
+		return nil
+	}
+	return ErrForbidden
 }
 
 func (p Principal) IsInstanceAdmin() bool { return p.Scope == ScopeInstance && p.Role == RoleAdmin }
@@ -119,6 +128,9 @@ func (p Principal) IsInstanceAdmin() bool { return p.Scope == ScopeInstance && p
 // SeesTenant is nil when p may access tenant slug at all. A foreign tenant is
 // ErrNotFound so its existence is not revealed.
 func (p Principal) SeesTenant(slug string) error {
+	if err := p.authorized(); err != nil {
+		return err
+	}
 	if p.IsInstanceAdmin() || p.TenantSlug == slug {
 		return nil
 	}

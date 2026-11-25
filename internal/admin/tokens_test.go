@@ -176,3 +176,32 @@ func TestTenantAdminSeesAndRevokesOnlyOwnTenantTokens(t *testing.T) {
 		t.Fatalf("instance admin sees %d tokens", len(all))
 	}
 }
+
+func TestPrincipalWithoutRightsIsForbiddenEverywhere(t *testing.T) {
+	svc := tokenServiceWithTenants(t, "acme")
+	tok, _, err := svc.IssueTokenFor(ctx, instanceAdmin, "own", 0, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []admin.Principal{
+		{},
+		{Scope: admin.ScopeTenant, Role: admin.RoleAdmin},
+		{Scope: admin.ScopeTenant, TenantSlug: "acme", Role: "viewer"},
+	} {
+		calls := map[string]func() error{
+			"IssueTokenFor":   func() error { _, _, err := svc.IssueTokenFor(ctx, p, "x", 0, ""); return err },
+			"ListTokensFor":   func() error { _, err := svc.ListTokensFor(ctx, p); return err },
+			"RevokeTokenFor":  func() error { return svc.RevokeTokenFor(ctx, p, tok.ID) },
+			"ListTenantsFor":  func() error { _, err := svc.ListTenantsFor(ctx, p); return err },
+			"CreateTenantFor": func() error { _, err := svc.CreateTenantFor(ctx, p, admin.Tenant{Slug: "new"}); return err },
+			"DeleteTenantFor": func() error { return svc.DeleteTenantFor(ctx, p, "acme", 0) },
+			"UpdateTenantFor": func() error { _, err := svc.UpdateTenantFor(ctx, p, admin.Tenant{Slug: "acme"}, 0); return err },
+			"SeesTenant":      func() error { return p.SeesTenant(p.TenantSlug) },
+		}
+		for name, call := range calls {
+			if err := call(); !errors.Is(err, admin.ErrForbidden) {
+				t.Errorf("%+v %s: err = %v, want ErrForbidden", p, name, err)
+			}
+		}
+	}
+}

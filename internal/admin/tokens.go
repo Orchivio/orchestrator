@@ -38,6 +38,9 @@ func (s *Service) IssueToken(ctx context.Context, name string, ttl time.Duration
 // instance token for tenant "" and a tenant admin token otherwise; a tenant
 // admin may only issue for its own tenant ("" means its own).
 func (s *Service) IssueTokenFor(ctx context.Context, p Principal, name string, ttl time.Duration, tenant string) (Token, string, error) {
+	if err := p.authorized(); err != nil {
+		return Token{}, "", err
+	}
 	if !p.IsInstanceAdmin() {
 		if tenant != "" && tenant != p.TenantSlug {
 			return Token{}, "", ErrForbidden
@@ -127,6 +130,9 @@ func (s *Service) RevokeToken(ctx context.Context, id uuid.UUID) error {
 // ListTokensFor lists all tokens for an instance admin and only the tokens
 // scoped to its own tenant for a tenant admin.
 func (s *Service) ListTokensFor(ctx context.Context, p Principal) ([]Token, error) {
+	if err := p.authorized(); err != nil {
+		return nil, err
+	}
 	all, err := s.store.ListTokens(ctx)
 	if err != nil || p.IsInstanceAdmin() {
 		return all, err
@@ -142,6 +148,9 @@ func (s *Service) ListTokensFor(ctx context.Context, p Principal) ([]Token, erro
 
 // RevokeTokenFor revokes a token p can see; any other id is ErrNotFound.
 func (s *Service) RevokeTokenFor(ctx context.Context, p Principal, id uuid.UUID) error {
+	if err := p.authorized(); err != nil {
+		return err
+	}
 	if !p.IsInstanceAdmin() {
 		// ponytail: scans the token list, add a GetToken query when tokens number in the thousands
 		own, err := s.ListTokensFor(ctx, p)

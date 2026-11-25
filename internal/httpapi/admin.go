@@ -85,7 +85,8 @@ func (a *adminAPI) tenantScoped(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// principal is the caller; Authenticate guarantees one, the zero value has no rights.
+// principal is the caller; Authenticate guarantees one. The zero value is
+// ErrForbidden in every admin.Service ...For function and in SeesTenant.
 func principal(r *http.Request) admin.Principal {
 	p, _ := PrincipalFrom(r.Context())
 	return p
