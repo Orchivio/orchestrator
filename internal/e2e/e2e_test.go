@@ -618,7 +618,7 @@ func TestEndToEndWithFakes(t *testing.T) {
 	t.Run("task opens a pull request and links it in the ticket", func(t *testing.T) {
 		e.send(pluginv1.TrackerEvent_ASSIGNED, "ORC-2", "", false)
 		a := e.lease(t)
-		wantBranch := "orchivio/orc-2-" + a.GetRunId()[:8]
+		wantBranch := "orchivio/orc-2-" + a.GetRunId()[:8] + "-titel-orc-2"
 		if a.GetKind() != "task" || a.GetBranch() != wantBranch {
 			t.Fatalf("kind=%q branch=%q, want task %q", a.GetKind(), a.GetBranch(), wantBranch)
 		}

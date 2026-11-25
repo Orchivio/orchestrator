@@ -237,7 +237,7 @@ func (r *Router) queue(ctx context.Context, run *Run, ticket *pluginv1.Ticket, l
 	}
 	run.Prompt = BuildPrompt(ticket, history, run.Kind)
 	if run.Kind == classifier.KindTask {
-		run.Branch = r.branchFor(run, last)
+		run.Branch = r.branchFor(run, last, ticket.GetTitle())
 	} else {
 		run.Branch = ""
 	}
@@ -253,14 +253,18 @@ func (r *Router) queue(ctx context.Context, run *Run, ticket *pluginv1.Ticket, l
 
 // branchFor keeps the branch of a resumed run, reuses the previous task's branch,
 // or derives a fresh one.
-func (r *Router) branchFor(run, last *Run) string {
+func (r *Router) branchFor(run, last *Run, title string) string {
 	if run.Branch != "" {
 		return run.Branch
 	}
 	if last != nil && last.ID != run.ID && last.Kind == classifier.KindTask && last.Branch != "" {
 		return last.Branch
 	}
-	return branchPrefix + strings.ToLower(run.TicketRef) + "-" + run.ID.String()[:shortIDLen]
+	name := branchPrefix + strings.ToLower(run.TicketRef) + "-" + run.ID.String()[:shortIDLen]
+	if slug := Slug(title); slug != "" {
+		name += "-" + slug
+	}
+	return name
 }
 
 func (r *Router) setState(ctx context.Context, run *Run, state string) error {
@@ -272,6 +276,7 @@ func (r *Router) setState(ctx context.Context, run *Run, state string) error {
 	if err := r.store.AppendEvent(ctx, run.Tenant, run.ID, eventRunState, map[string]string{"state": state}); err != nil {
 		return fmt.Errorf("record state %s: %w", run.TicketRef, err)
 	}
+	ApplyStatus(ctx, r.cfg, r.tracker, r.store, *run, state)
 	return nil
 }
 

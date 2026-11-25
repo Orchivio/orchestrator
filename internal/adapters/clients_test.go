@@ -265,3 +265,85 @@ func TestUnauthenticatedCodeHostCallMarksOnlyWithSingleCredential(t *testing.T) 
 		t.Fatal("hook ran although two credentials were sent")
 	}
 }
+
+// statusTracker supports (or not) status updates and records SetStatus calls.
+type statusTracker struct {
+	pluginv1.UnimplementedTrackerAdapterServer
+	supported bool
+	calls     *[]string
+	code      codes.Code
+}
+
+func (s statusTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
+	return &pluginv1.Capabilities{ContractVersion: contractVersion, SupportsStatusUpdate: s.supported}, nil
+}
+
+func (s statusTracker) SetStatus(_ context.Context, req *pluginv1.SetStatusRequest) (*pluginv1.SetStatusResponse, error) {
+	*s.calls = append(*s.calls, req.GetTicketRef()+"|"+req.GetStatus()+"|"+string(req.GetCredential().GetData()))
+	if s.code != codes.OK {
+		return nil, status.Error(s.code, "nope")
+	}
+	return &pluginv1.SetStatusResponse{Changed: true}, nil
+}
+
+func statusEnv(t *testing.T, srvImpl statusTracker) (*Registry, chan rejectedCall) {
+	t.Helper()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	c := testConfig()
+	acme := c.Tenants["acme"]
+	acme.TrackerCredential = []byte("trk")
+	acme.TrackerConnectionID = uuid.New()
+	c.Tenants["acme"] = acme
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: c}, time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	pluginv1.RegisterTrackerAdapterServer(srv, srvImpl)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	reg := NewRegistry(cfg, log)
+	reg.dialer = func(string) (*grpc.ClientConn, error) {
+		return grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	t.Cleanup(reg.Close)
+	rejected := make(chan rejectedCall, 4)
+	reg.OnRejected(func(_ context.Context, tenant string, id uuid.UUID) { rejected <- rejectedCall{tenant, id} })
+	return reg, rejected
+}
+
+func TestSetStatusCallsAdapterWhenSupported(t *testing.T) {
+	var calls []string
+	reg, _ := statusEnv(t, statusTracker{supported: true, calls: &calls})
+	if err := reg.Tracker().SetStatus(context.Background(), "acme", "ORC-1", "In Review"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(calls); got != "[ORC-1|In Review|trk]" {
+		t.Fatalf("calls = %s", got)
+	}
+}
+
+func TestSetStatusIsNoopWithoutCapability(t *testing.T) {
+	var calls []string
+	reg, _ := statusEnv(t, statusTracker{supported: false, calls: &calls})
+	if err := reg.Tracker().SetStatus(context.Background(), "acme", "ORC-1", "In Review"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("adapter called: %v", calls)
+	}
+}
+
+func TestSetStatusUnauthenticatedMarksConnection(t *testing.T) {
+	var calls []string
+	reg, rejected := statusEnv(t, statusTracker{supported: true, calls: &calls, code: codes.Unauthenticated})
+	if err := reg.Tracker().SetStatus(context.Background(), "acme", "ORC-1", "In Review"); err == nil {
+		t.Fatal("want error")
+	}
+	if r := <-rejected; r.tenant != "acme" {
+		t.Fatalf("rejected = %v", r)
+	}
+}

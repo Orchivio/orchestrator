@@ -119,6 +119,9 @@ type Tracker interface {
 	// system in "<system>:<id>" role entries.
 	AdapterName(ctx context.Context, tenant string) (string, error)
 	GetTicket(ctx context.Context, tenant, ref string) (*pluginv1.Ticket, error)
+	// SetStatus moves the ticket to the named status; a no-op (nil) when the
+	// adapter does not support status updates.
+	SetStatus(ctx context.Context, tenant, ref, status string) error
 }
 
 // Reporter writes milestones and notices back to the ticket.

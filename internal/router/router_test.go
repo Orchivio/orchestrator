@@ -1,6 +1,7 @@
 package router
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -138,9 +139,17 @@ func (s *fakeStore) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ st
 }
 
 type fakeTracker struct {
-	labels []string
-	err    error
-	system string
+	labels    []string
+	err       error
+	system    string
+	title     string
+	statusErr error
+	statuses  []string
+}
+
+func (f *fakeTracker) SetStatus(_ context.Context, _, _, status string) error {
+	f.statuses = append(f.statuses, status)
+	return f.statusErr
 }
 
 func (f *fakeTracker) AdapterName(context.Context, string) (string, error) { return f.system, nil }
@@ -149,7 +158,7 @@ func (f *fakeTracker) GetTicket(_ context.Context, _, ref string) (*pluginv1.Tic
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &pluginv1.Ticket{TicketRef: ref, Title: "Titel", Description: "Beschreibung", Labels: f.labels}, nil
+	return &pluginv1.Ticket{TicketRef: ref, Title: cmp.Or(f.title, "Titel"), Description: "Beschreibung", Labels: f.labels}, nil
 }
 
 type fakeReporter struct {
@@ -180,6 +189,11 @@ type fixture struct {
 
 func newFixture(t *testing.T, defaultRepo string) *fixture {
 	t.Helper()
+	return newFixtureWith(t, defaultRepo, nil)
+}
+
+func newFixtureWith(t *testing.T, defaultRepo string, mutate func(*config.Project)) *fixture {
+	t.Helper()
 	cfg := &config.Config{Tenants: map[string]config.Tenant{"acme": {
 		Name:     "acme",
 		Tracker:  config.AdapterRef{Name: "linear", Address: "localhost:7101"},
@@ -199,6 +213,11 @@ func newFixture(t *testing.T, defaultRepo string) *fixture {
 			Milestones:   config.DefaultMilestones(),
 		}},
 	}}}
+	if mutate != nil {
+		tn := cfg.Tenants["acme"]
+		mutate(&tn.Projects[0])
+		cfg.Tenants["acme"] = tn
+	}
 	sync, err := config.NewSync(context.Background(), config.Static{Config: cfg}, time.Hour, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +289,7 @@ func TestHandleAssignedCreatesQueuedTask(t *testing.T) {
 	if run.State != StateQueued || run.Kind != classifier.KindTask {
 		t.Fatalf("state=%s kind=%s", run.State, run.Kind)
 	}
-	if want := "orchivio/orc-12-" + run.ID.String()[:8]; run.Branch != want {
+	if want := "orchivio/orc-12-" + run.ID.String()[:8] + "-titel"; run.Branch != want {
 		t.Fatalf("branch = %q, want %q", run.Branch, want)
 	}
 	if len(f.rep.milestones) != 1 || f.rep.milestones[0] != "started: Gestartet als Aufgabe in soemii/playground." {
@@ -606,5 +625,88 @@ func TestStartFollowUpAllowsRepoViaSystemIdentity(t *testing.T) {
 	last := f.s.runs[len(f.s.runs)-1]
 	if len(f.s.runs) != 2 || last.Kind != classifier.KindTask || len(last.Repos) != 1 || last.Repos[0] != "soemii/playground" {
 		t.Fatalf("follow-up run = %+v (runs %d)", last, len(f.s.runs))
+	}
+}
+
+func TestBranchSchemaWithTitle(t *testing.T) {
+	r := &Router{}
+	run := &Run{ID: uuid.MustParse("3f9a1c00-0000-0000-0000-000000000000"), TicketRef: "PROJ-12"}
+	if got, want := r.branchFor(run, nil, "Login reparieren"), "orchivio/proj-12-3f9a1c00-login-reparieren"; got != want {
+		t.Fatalf("branch = %q, want %q", got, want)
+	}
+}
+
+func TestBranchWithoutSlug(t *testing.T) {
+	r := &Router{}
+	run := &Run{ID: uuid.MustParse("3f9a1c00-0000-0000-0000-000000000000"), TicketRef: "PROJ-12"}
+	if got, want := r.branchFor(run, nil, "!!!"), "orchivio/proj-12-3f9a1c00"; got != want {
+		t.Fatalf("branch = %q, want %q", got, want)
+	}
+}
+
+func TestSlugFoldsAndCuts(t *testing.T) {
+	if got, want := Slug("Größe ändern: 100% & mehr!!"), "groesse-aendern-100-mehr"; got != want {
+		t.Fatalf("Slug = %q, want %q", got, want)
+	}
+	long := Slug(strings.Repeat("abcd ", 12)) // 60 chars, cut lands on a dash
+	if len(long) > 40 || strings.HasSuffix(long, "-") {
+		t.Fatalf("Slug = %q (len %d)", long, len(long))
+	}
+	if got := Slug("日本"); got != "" {
+		t.Fatalf("Slug = %q, want empty", got)
+	}
+}
+
+func withStatusMap(p *config.Project) {
+	p.StatusMap = map[string]string{StateRunning: "In Progress", StateSucceeded: "In Review"}
+}
+
+func TestStatusSetOnMappedStates(t *testing.T) {
+	f := newFixtureWith(t, "soemii/playground", withStatusMap)
+	handle(t, f, assigned("e1", actor))
+	if len(f.tr.statuses) != 0 {
+		t.Fatalf("statuses after queueing = %v, want none (queued unmapped)", f.tr.statuses)
+	}
+	run := f.s.runs[0]
+	for _, state := range []string{StateRunning, StateSucceeded} {
+		if err := f.r.setState(context.Background(), run, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := strings.Join(f.tr.statuses, ","); got != "In Progress,In Review" {
+		t.Fatalf("statuses = %s", got)
+	}
+}
+
+func TestQuestionRunsDoNotSetStatus(t *testing.T) {
+	f := newFixtureWith(t, "soemii/playground", withStatusMap)
+	f.tr.labels = []string{"orchivio:frage"}
+	handle(t, f, assigned("e1", actor))
+	run := f.s.runs[0]
+	if run.Kind != classifier.KindQuestion {
+		t.Fatalf("kind = %s", run.Kind)
+	}
+	if err := f.r.setState(context.Background(), run, StateRunning); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.tr.statuses) != 0 {
+		t.Fatalf("statuses = %v, want none", f.tr.statuses)
+	}
+}
+
+func TestStatusFailureDoesNotFailRun(t *testing.T) {
+	f := newFixtureWith(t, "soemii/playground", withStatusMap)
+	handle(t, f, assigned("e1", actor))
+	f.tr.statusErr = errors.New("jira 500")
+	run := f.s.runs[0]
+	if err := f.r.setState(context.Background(), run, StateSucceeded); err != nil {
+		t.Fatalf("setState = %v, want nil", err)
+	}
+	if run.State != StateSucceeded {
+		t.Fatalf("state = %s", run.State)
+	}
+	last := f.s.events[len(f.s.events)-1]
+	if want := "status_failed map[error:jira 500 state:succeeded status:In Review]"; last != want {
+		t.Fatalf("last event = %q, want %q", last, want)
 	}
 }

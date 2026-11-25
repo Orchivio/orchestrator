@@ -27,6 +27,7 @@ type conn struct {
 	checked bool
 	err     error  // non-nil once checked: adapter refused
 	name    string // adapter_name of the capabilities answer
+	status  bool   // supports_status_update of the capabilities answer
 }
 
 // check calls GetCapabilities until it got an answer; a refusal is cached,
@@ -43,6 +44,7 @@ func (c *conn) check(ctx context.Context, log *slog.Logger, tenant, kind, addr s
 	}
 	c.checked = true
 	c.name = caps.GetAdapterName()
+	c.status = caps.GetSupportsStatusUpdate()
 	if caps.GetContractVersion() != contractVersion {
 		c.err = fmt.Errorf("%s adapter of tenant %s speaks %q, want %q", kind, tenant, caps.GetContractVersion(), contractVersion)
 		log.Error("adapter refused", "tenant", tenant, "kind", kind, "addr", addr, "contract_version", caps.GetContractVersion())
@@ -222,6 +224,31 @@ func (t *Tracker) GetTicket(ctx context.Context, tenant, ref string) (*pluginv1.
 	}
 	ticket, err := c.GetTicket(ctx, &pluginv1.GetTicketRequest{TicketRef: ref, Credential: cred})
 	return ticket, t.r.rejected(ctx, tenant, []uuid.UUID{id}, err)
+}
+
+// SetStatus moves a ticket to the named status; a no-op when the adapter lacks
+// supports_status_update (cached capabilities, no extra call).
+func (t *Tracker) SetStatus(ctx context.Context, tenant, ref, statusName string) error {
+	c, cred, id, err := t.r.trackerClient(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	tn, err := t.r.tenant(tenant)
+	if err != nil {
+		return err
+	}
+	cn, err := t.r.checkedConn(ctx, tenant, "tracker", tn.Tracker.Address, func(cc *grpc.ClientConn) capsClient { return pluginv1.NewTrackerAdapterClient(cc) })
+	if err != nil {
+		return err
+	}
+	cn.mu.Lock()
+	supported := cn.status
+	cn.mu.Unlock()
+	if !supported {
+		return nil
+	}
+	_, err = c.SetStatus(ctx, &pluginv1.SetStatusRequest{TicketRef: ref, Status: statusName, Credential: cred})
+	return t.r.rejected(ctx, tenant, []uuid.UUID{id}, err)
 }
 
 // TenantTracker implements reporter.TrackerClient.

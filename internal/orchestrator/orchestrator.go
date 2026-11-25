@@ -334,4 +334,5 @@ func (o *Orchestrator) recordState(ctx context.Context, run *router.Run) {
 	if err := o.store.AppendEvent(ctx, run.Tenant, run.ID, eventRunState, map[string]string{"state": run.State}); err != nil {
 		slog.Error("record state event failed", "run", run.ID, "error", err)
 	}
+	router.ApplyStatus(ctx, o.cfg, o.tracker, o.store, *run, run.State)
 }

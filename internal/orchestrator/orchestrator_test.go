@@ -34,6 +34,7 @@ func testConfig() *config.Config {
 			},
 			MaxDiffLines: 300,
 			Milestones:   config.DefaultMilestones(),
+			StatusMap:    map[string]string{"running": "In Progress", "succeeded": "In Review"},
 		}},
 	}}}
 }
@@ -109,7 +110,17 @@ func (h *fakeHost) OpenPullRequest(_ context.Context, _ string, req *pluginv1.Op
 	return &pluginv1.PullRequest{Url: "https://gh/" + req.Repo + "/pull/1"}, nil
 }
 
-type fakeTracker struct{}
+type fakeTracker struct {
+	statuses *[]string
+	err      error
+}
+
+func (f fakeTracker) SetStatus(_ context.Context, _, _, status string) error {
+	if f.statuses != nil {
+		*f.statuses = append(*f.statuses, status)
+	}
+	return f.err
+}
 
 func (fakeTracker) AdapterName(context.Context, string) (string, error) { return "fake", nil }
 
@@ -550,5 +561,46 @@ func TestCompleteAnsweredStoresNoAgentInput(t *testing.T) {
 	_ = f.complete("w1", workerv1.CompleteRunRequest_ANSWERED, "42", nil)
 	if len(f.s.inputs) != 0 {
 		t.Errorf("inputs = %+v", f.s.inputs)
+	}
+}
+
+func withTracker(f *fixture, tr fakeTracker) { f.o.tracker = tr }
+
+func TestStatusSetOnLeaseAndSuccess(t *testing.T) {
+	f := newFixture(t, "task")
+	var got []string
+	withTracker(f, fakeTracker{statuses: &got})
+	f.lease(t)
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "done", map[string]string{"soemii/a": branch, "soemii/b": branch}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "In Progress,In Review"; strings.Join(got, ",") != want { // pushing is unmapped
+		t.Fatalf("statuses = %v, want %s", got, want)
+	}
+}
+
+func TestStatusNotSetForQuestionRuns(t *testing.T) {
+	f := newFixture(t, "question")
+	var got []string
+	withTracker(f, fakeTracker{statuses: &got})
+	f.lease(t)
+	if len(got) != 0 {
+		t.Fatalf("statuses = %v, want none", got)
+	}
+}
+
+func TestStatusFailureRecordedAndRunContinues(t *testing.T) {
+	f := newFixture(t, "task")
+	withTracker(f, fakeTracker{err: errors.New("jira 500")})
+	f.lease(t)
+	if f.state() != router.StateRunning {
+		t.Fatalf("state = %s", f.state())
+	}
+	last := f.s.events[len(f.s.events)-1]
+	if want := "status_failed"; last.typ != want {
+		t.Fatalf("last event = %v", last)
+	}
+	if p := last.payload.(map[string]string); p["state"] != "running" || p["status"] != "In Progress" || p["error"] != "jira 500" {
+		t.Fatalf("payload = %v", p)
 	}
 }
