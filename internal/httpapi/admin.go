@@ -33,7 +33,7 @@ var AdminRoutes = []Route{
 	{"GET", "/tenants/{slug}/projects/{id}"}, {"PUT", "/tenants/{slug}/projects/{id}"}, {"DELETE", "/tenants/{slug}/projects/{id}"},
 	{"GET", "/tenants/{slug}/projects/{id}/runs"}, {"GET", "/tenants/{slug}/projects/{id}/runs/{runId}"},
 	{"GET", "/tenants/{slug}/connections"}, {"POST", "/tenants/{slug}/connections/{adapter}/authorize"},
-	{"GET", "/tenants/{slug}/connections/{adapter}/form"}, {"POST", "/tenants/{slug}/connections/{adapter}"},
+	{"GET", "/tenants/{slug}/connections/{adapter}/form"}, {"POST", "/tenants/{slug}/connections/{adapter}/form"},
 	{"GET", "/tenants/{slug}/connections/{id}"}, {"DELETE", "/tenants/{slug}/connections/{id}"},
 	{"GET", "/tokens"}, {"POST", "/tokens"}, {"DELETE", "/tokens/{id}"},
 }
@@ -61,7 +61,7 @@ func NewAdmin(svc *admin.Service, log *slog.Logger) http.Handler {
 		"GET /tenants/{slug}/connections":                      a.listConnections,
 		"POST /tenants/{slug}/connections/{adapter}/authorize": a.authorize,
 		"GET /tenants/{slug}/connections/{adapter}/form":       a.connectForm,
-		"POST /tenants/{slug}/connections/{adapter}":           a.formConnect,
+		"POST /tenants/{slug}/connections/{adapter}/form":      a.formConnect,
 		"GET /tenants/{slug}/connections/{id}":                 a.getConnection,
 		"DELETE /tenants/{slug}/connections/{id}":              a.deleteConnection,
 		"GET /tokens": a.listTokens, "POST /tokens": a.createToken, "DELETE /tokens/{id}": a.revokeToken,

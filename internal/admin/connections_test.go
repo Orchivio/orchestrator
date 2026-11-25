@@ -475,12 +475,12 @@ func TestFormConnectStoresLikeCallbackAndSwitchesTracker(t *testing.T) {
 	e := newConnEnv(t)
 	e.conn.form = []admin.FormField{{Name: "token", Label: "Token", Secret: true, Required: true}}
 	e.conn.completed = admin.Completed{Data: []byte("plain-ws1"), Label: "WS1", ExternalID: "ws1"}
-	c, err := e.svc.FormConnect(ctx, "acme", "linear", map[string]string{"token": "t"}, nil)
+	c, _, err := e.svc.FormConnect(ctx, "acme", "linear", map[string]string{"token": "t"})
 	if err != nil || c.Kind != admin.KindTracker || c.Status != admin.StatusActive {
 		t.Fatal(c, err)
 	}
 	e.conn.completed.ExternalID = "ws2"
-	c2, err := e.svc.FormConnect(ctx, "acme", "linear", map[string]string{"token": "t"}, nil)
+	c2, _, err := e.svc.FormConnect(ctx, "acme", "linear", map[string]string{"token": "t"})
 	if err != nil || c2.ID == c.ID {
 		t.Fatal(c2, err)
 	}
@@ -492,7 +492,7 @@ func TestFormConnectStoresLikeCallbackAndSwitchesTracker(t *testing.T) {
 func TestFormConnectRejectsUnknownFieldBeforeAdapter(t *testing.T) {
 	e := newConnEnv(t)
 	e.conn.form = []admin.FormField{{Name: "token", Required: true}}
-	_, err := e.svc.FormConnect(ctx, "acme", "github", map[string]string{"token": "t", "extra": "x"}, nil)
+	_, _, err := e.svc.FormConnect(ctx, "acme", "github", map[string]string{"token": "t", "extra": "x"})
 	var ve *admin.ValidationError
 	if !errors.As(err, &ve) || ve.Fields[0].Field != "fields.extra" || e.conn.formCalls != 0 {
 		t.Fatal(err, e.conn.formCalls)

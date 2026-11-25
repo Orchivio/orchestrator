@@ -309,7 +309,7 @@ func TestCallbackAnswersOnlyGetAndKeepsStateOtherwise(t *testing.T) {
 
 const (
 	formSecret = "s3cr3t-xyz"
-	formPath   = "/api/v1/tenants/acme/connections/github"
+	formPath   = "/api/v1/tenants/acme/connections/github/form"
 )
 
 func newFormEnv(t *testing.T) *connEnv {
@@ -329,7 +329,7 @@ func formBody(token string) string {
 
 func TestFormListsAdapterFields(t *testing.T) {
 	e := newFormEnv(t)
-	rec := e.do("GET", formPath+"/form", "")
+	rec := e.do("GET", formPath, "")
 	want := `{"fields":[{"name":"url","label":"URL","secret":false,"required":true},{"name":"token","label":"Token","secret":true,"required":true}]}`
 	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want {
 		t.Fatal(rec.Code, rec.Body.String())
@@ -363,7 +363,7 @@ func TestFormConnectOAuthOnlyAdapterIs404(t *testing.T) {
 	if rec := e.do("GET", "/api/v1/tenants/acme/connections/linear/form", ""); rec.Code != 404 {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
-	if rec := e.do("POST", "/api/v1/tenants/acme/connections/linear", formBody("x")); rec.Code != 404 || e.conn.formCalls != 0 {
+	if rec := e.do("POST", "/api/v1/tenants/acme/connections/linear/form", formBody("x")); rec.Code != 404 || e.conn.formCalls != 0 {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
 }
@@ -390,19 +390,36 @@ func TestFormConnectExclusiveAcrossTenants(t *testing.T) {
 	if rec := e.do("POST", formPath, formBody("a")); rec.Code != 201 {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
-	if rec := e.do("POST", "/api/v1/tenants/beta/connections/github", formBody("b")); rec.Code != 409 {
+	if rec := e.do("POST", "/api/v1/tenants/beta/connections/github/form", formBody("b")); rec.Code != 409 {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
 }
 
-func TestFormConnectReplacesWithIfMatch(t *testing.T) {
+func TestFormConnectReplacesByExternalID(t *testing.T) {
 	e := newFormEnv(t)
-	first := decode(t, e.do("POST", formPath, formBody("a")))
+	rec := e.do("POST", formPath, formBody("a"))
+	first := decode(t, rec)
+	if rec.Code != 201 || rec.Header().Get("Location") == "" {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
 	id := uuid.MustParse(first["id"].(string))
+	before, _ := e.store.ConnectionCredential(t.Context(), id)
 	e.store.conns[id].c.Status = admin.StatusNeedsReauth
-	rec := e.do("POST", formPath, formBody("b"), "If-Match", `"1"`)
+	e.conn.completed.Data = []byte("plain-cred-2")
+	rec = e.do("POST", formPath, formBody("b"))
 	got := decode(t, rec)
-	if rec.Code != 200 || got["id"] != first["id"] || got["status"] != "active" {
+	after, _ := e.store.ConnectionCredential(t.Context(), id)
+	if rec.Code != 200 || rec.Header().Get("Location") != "" || got["id"] != first["id"] || got["status"] != "active" ||
+		bytes.Equal(before.Data, after.Data) {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestFormConnectUnauthenticatedIs422WithoutSecret(t *testing.T) {
+	e := newFormEnv(t)
+	e.conn.formErr = errors.Join(admin.ErrCredentialRejected, errors.New("bad "+formSecret))
+	rec := e.do("POST", formPath, formBody(formSecret))
+	if rec.Code != 422 || strings.Contains(rec.Body.String()+e.logs.String(), formSecret) {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
 }

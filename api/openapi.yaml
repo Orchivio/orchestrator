@@ -255,17 +255,13 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "502": {$ref: "#/components/responses/AdapterFailed"}
         "503": {$ref: "#/components/responses/Unavailable"}
-  /tenants/{slug}/connections/{adapter}:
-    parameters:
-      - {$ref: "#/components/parameters/Slug"}
-      - {name: adapter, in: path, required: true, schema: {type: string}}
     post:
       summary: Connect the tenant to an adapter with form values
       description: >
         Fields are those of the form. A missing required field or values the
         adapter refuses give 422 (field fields.<name> or fields). Values are
-        never echoed or logged. With If-Match (any value) an existing
-        connection to the same account is replaced and 200 is answered.
+        never echoed or logged. A connection to the same account is replaced
+        in place (200); a new one is created (201, with Location).
       operationId: connectByForm
       requestBody:
         required: true
@@ -277,7 +273,7 @@ paths:
               properties:
                 fields: {type: object, additionalProperties: {type: string}}
       responses:
-        "200": {description: Connection replaced, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
+        "200": {description: Existing connection of the same account replaced, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
         "201": {description: Connection created, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}

@@ -70,6 +70,8 @@ func TestTenantAdminScope(t *testing.T) {
 		{"other projects", "GET", "/api/v1/tenants/other/projects", "", 404},
 		{"other project create", "POST", "/api/v1/tenants/other/projects", projectBody(pid, "o/x"), 404},
 		{"other connections", "GET", "/api/v1/tenants/other/connections", "", 404},
+		{"other form", "GET", "/api/v1/tenants/other/connections/github/form", "", 404},
+		{"other form connect", "POST", "/api/v1/tenants/other/connections/github/form", `{"fields":{}}`, 404},
 		{"other authorize", "POST", "/api/v1/tenants/other/connections/linear/authorize", "", 404},
 	}
 	for _, c := range cases {

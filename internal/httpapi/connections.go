@@ -78,23 +78,18 @@ func (a *adminAPI) formConnect(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Fields map[string]string `json:"fields"`
 	}
-	version, ok := ifMatch(w, r)
-	if !ok || !decodeBody(w, r, &req) {
+	if !decodeBody(w, r, &req) {
 		return
 	}
-	var ifVersion *int64
-	if r.Header.Get("If-Match") != "" {
-		ifVersion = &version
-	}
 	slug := r.PathValue("slug")
-	c, err := a.svc.FormConnect(r.Context(), slug, r.PathValue("adapter"), req.Fields, ifVersion)
+	c, created, err := a.svc.FormConnect(r.Context(), slug, r.PathValue("adapter"), req.Fields)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if ifVersion != nil {
-		a.send(w, http.StatusOK, 0, connectionOut(c))
+	if created {
+		a.created(w, "/tenants/"+slug+"/connections/"+c.ID.String(), 0, connectionOut(c))
 		return
 	}
-	a.created(w, "/tenants/"+slug+"/connections/"+c.ID.String(), 0, connectionOut(c))
+	a.send(w, http.StatusOK, 0, connectionOut(c))
 }

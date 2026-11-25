@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ const (
 var (
 	ErrUnavailable        = errors.New("connections unavailable")        // 503: not configured or adapter unreachable
 	ErrAdapter            = errors.New("adapter failed")                 // 502: adapter answered with an error
-	ErrCredentialRejected = errors.New("credential rejected by adapter") // grpc Unauthenticated/PermissionDenied
+	ErrCredentialRejected = errors.New("credential rejected by adapter") // grpc Unauthenticated/PermissionDenied/InvalidArgument
 	ErrNotConnected       = errors.New("not connected")                  // grpc FailedPrecondition
 )
 
@@ -37,7 +38,7 @@ func (e *NotConnectedError) Error() string        { return "not connected: " + e
 func (e *NotConnectedError) Is(target error) bool { return target == ErrNotConnected }
 
 // RejectedError is ErrCredentialRejected with the adapter's explanation of a
-// refused permission, which may be shown to the user (e.g. only an
+// refused permission or invalid input (PermissionDenied, InvalidArgument), which may be shown to the user (e.g. only an
 // organization admin can connect).
 type RejectedError struct{ Reason string }
 
@@ -141,38 +142,34 @@ func (s *Service) Callback(ctx context.Context, adapter string, query map[string
 	if err != nil {
 		return Connection{}, fmt.Errorf("complete connect at %s for tenant %s: %w", adapter, tenant, err)
 	}
-	saved, err := s.storeCompleted(ctx, tenant, kind, adapter, done)
-	if err != nil {
-		return Connection{}, err
-	}
-	return saved, nil
+	saved, _, err := s.storeCompleted(ctx, tenant, kind, adapter, done)
+	return saved, err
 }
 
 // storeCompleted seals and saves a connection the adapter completed; for a
 // tracker it switches workspaces like switchTracker. A connection to the same
-// external id is reconnected in place.
-func (s *Service) storeCompleted(ctx context.Context, tenant, kind, adapter string, done Completed) (Connection, error) {
+// external id is reconnected in place (created is false then).
+func (s *Service) storeCompleted(ctx context.Context, tenant, kind, adapter string, done Completed) (saved Connection, created bool, err error) {
 	if done.ExternalID == "" {
-		return Connection{}, fmt.Errorf("%w: %s returned no external id", ErrAdapter, adapter)
+		return Connection{}, false, fmt.Errorf("%w: %s returned no external id", ErrAdapter, adapter)
 	}
 	sealed, err := s.box.Seal(done.Data)
 	if err != nil {
-		return Connection{}, err
+		return Connection{}, false, err
 	}
 	c := Connection{ID: s.newID(), TenantSlug: tenant, Kind: kind, Adapter: adapter, ExternalID: done.ExternalID,
 		Label: done.Label, Status: StatusActive, RefreshAfter: done.RefreshAfter}
 	cred := SealedCredential{KeyID: s.box.KeyID(), Data: sealed}
-	var saved Connection
 	if kind == KindTracker {
 		saved, err = s.switchTracker(ctx, c, cred)
 	} else {
 		saved, err = s.store.SaveConnection(ctx, c, cred)
 	}
 	if err != nil {
-		return Connection{}, err
+		return Connection{}, false, err
 	}
 	s.changed(ctx)
-	return saved, nil
+	return saved, saved.ID == c.ID, nil
 }
 
 // ConnectForm is the form tenant fills in to connect adapter; ErrNotFound if
@@ -207,23 +204,25 @@ func (s *Service) formFor(ctx context.Context, tenant, adapter string) ([]FormFi
 // FormConnect connects tenant to adapter with the form values and stores the
 // result like Callback. Missing or unknown fields are refused before the
 // adapter is called; the adapter's refusal of the values is a field problem.
-// ifVersion only marks intent to replace (the HTTP layer answers 200 instead
-// of 201): connections carry no version, a reconnect is keyed by external id.
-func (s *Service) FormConnect(ctx context.Context, tenant, adapter string, fields map[string]string, ifVersion *int64) (Connection, error) {
+// A connection to the same external id is replaced like in Callback; created
+// tells whether a new one was made.
+func (s *Service) FormConnect(ctx context.Context, tenant, adapter string, fields map[string]string) (c Connection, created bool, err error) {
 	form, kind, err := s.formFor(ctx, tenant, adapter)
 	if err != nil {
-		return Connection{}, err
+		return Connection{}, false, err
 	}
 	if err := invalid(checkFormValues(form, fields)); err != nil {
-		return Connection{}, err
+		return Connection{}, false, err
 	}
 	done, err := s.connector.CompleteForm(ctx, adapter, kind, fields)
 	var rejected *RejectedError
-	if errors.As(err, &rejected) {
-		return Connection{}, invalid([]config.FieldError{{Field: "fields", Message: rejected.Reason}})
-	}
-	if err != nil {
-		return Connection{}, fmt.Errorf("complete form at %s for tenant %s: %w", adapter, tenant, err)
+	switch {
+	case errors.As(err, &rejected):
+		return Connection{}, false, invalid([]config.FieldError{{Field: "fields", Message: rejected.Reason}})
+	case errors.Is(err, ErrCredentialRejected): // Unauthenticated: the adapter's text is not shown
+		return Connection{}, false, invalid([]config.FieldError{{Field: "fields", Message: "the adapter rejected the credentials"}})
+	case err != nil:
+		return Connection{}, false, fmt.Errorf("complete form at %s for tenant %s: %w", adapter, tenant, err)
 	}
 	return s.storeCompleted(ctx, tenant, kind, adapter, done)
 }
@@ -231,6 +230,7 @@ func (s *Service) FormConnect(ctx context.Context, tenant, adapter string, field
 func checkFormValues(form []FormField, values map[string]string) []config.FieldError {
 	var problems []config.FieldError
 	known := map[string]bool{}
+	var unknown []string
 	for _, f := range form {
 		known[f.Name] = true
 		if f.Required && strings.TrimSpace(values[f.Name]) == "" {
@@ -239,8 +239,12 @@ func checkFormValues(form []FormField, values map[string]string) []config.FieldE
 	}
 	for name := range values {
 		if !known[name] {
-			problems = append(problems, config.FieldError{Field: "fields." + name, Message: "is not a field of this form"})
+			unknown = append(unknown, name)
 		}
+	}
+	slices.Sort(unknown)
+	for _, name := range unknown {
+		problems = append(problems, config.FieldError{Field: "fields." + name, Message: "is not a field of this form"})
 	}
 	return problems
 }
