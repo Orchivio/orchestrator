@@ -19,9 +19,15 @@ const msgConnectFailed = "Verbindung fehlgeschlagen"
 
 // NewCallback serves GET /oauth/callback/{adapter}, the provider's redirect
 // target. It needs no token: the single-use state authorizes. Neither code,
-// state nor credential appear in the page or the logs.
+// state nor credential appear in the page or the logs. Any other method (a
+// GET route also matches HEAD, e.g. link previews) is refused before the state is spent.
 func NewCallback(svc *admin.Service, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		query := map[string]string{}
 		for k, v := range r.URL.Query() {
 			query[k] = v[0]
@@ -29,7 +35,7 @@ func NewCallback(svc *admin.Service, log *slog.Logger) http.Handler {
 		adapter := r.PathValue("adapter")
 		c, err := svc.Callback(r.Context(), adapter, query)
 		if err == nil {
-			renderPage(w, log, http.StatusOK, "Verbunden: "+c.Label)
+			renderPage(w, log, http.StatusOK, "Verbunden: "+c.Label+" (Mandant "+c.TenantSlug+")")
 			return
 		}
 		status, msg := callbackFailure(err)
@@ -40,9 +46,12 @@ func NewCallback(svc *admin.Service, log *slog.Logger) http.Handler {
 
 func callbackFailure(err error) (int, string) {
 	var nc *admin.NotConnectedError
+	var re *admin.RejectedError
 	switch {
 	case errors.As(err, &nc):
 		return http.StatusBadRequest, msgConnectFailed + ": " + nc.Reason
+	case errors.As(err, &re):
+		return http.StatusForbidden, msgConnectFailed + ": " + re.Reason
 	case errors.Is(err, admin.ErrConflict):
 		return http.StatusConflict, "Bereits mit einem anderen Mandanten verbunden"
 	case errors.Is(err, admin.ErrInUse):

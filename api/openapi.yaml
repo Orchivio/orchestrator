@@ -307,12 +307,12 @@ components:
     TenantUpdate:
       type: object
       additionalProperties: false
-      required: [displayName, trackerAdapter, codeHostAdapter]
+      required: [displayName]
       properties:
         slug: {type: string, description: Optional and ignored; the path wins}
         displayName: {type: string}
-        trackerAdapter: {type: string, description: Immutable}
-        codeHostAdapter: {type: string}
+        trackerAdapter: {type: string, description: "Immutable. Required for instance admins; a tenant admin may omit it (the stored value is kept), another value is 403"}
+        codeHostAdapter: {type: string, description: "Required for instance admins; a tenant admin may omit it (the stored value is kept), another value is 403"}
     Profile:
       type: object
       additionalProperties: false

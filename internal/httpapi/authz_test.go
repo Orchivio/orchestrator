@@ -58,6 +58,7 @@ func TestTenantAdminScope(t *testing.T) {
 		{"delete own tenant", "DELETE", "/api/v1/tenants/acme", "", 403},
 		{"delete other tenant", "DELETE", "/api/v1/tenants/other", "", 404},
 		{"rename own tenant", "PUT", "/api/v1/tenants/acme", adaptersKept, 200},
+		{"rename own tenant without adapters", "PUT", "/api/v1/tenants/acme", `{"displayName":"Renamed"}`, 200},
 		{"change tracker adapter", "PUT", "/api/v1/tenants/acme", `{"displayName":"R","trackerAdapter":"jira","codeHostAdapter":"github"}`, 403},
 		{"change code host adapter", "PUT", "/api/v1/tenants/acme", `{"displayName":"R","trackerAdapter":"linear","codeHostAdapter":"gitlab"}`, 403},
 		{"rename other tenant", "PUT", "/api/v1/tenants/other", adaptersKept, 404},
@@ -143,5 +144,14 @@ func TestTenantTokenRejectedAfterTenantDeleted(t *testing.T) {
 	}
 	if rec := instance.do("GET", "/api/v1/tenants", ""); rec.Code != http.StatusOK {
 		t.Fatal("instance token must keep working:", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTenantAdminRenameKeepsAdapters(t *testing.T) {
+	_, tenant := tenantAdminEnv(t)
+	rec := tenant.do("PUT", "/api/v1/tenants/acme", `{"displayName":"Renamed"}`)
+	got := decode(t, rec)
+	if rec.Code != http.StatusOK || got["displayName"] != "Renamed" || got["trackerAdapter"] != "linear" || got["codeHostAdapter"] != "github" {
+		t.Fatal(rec.Code, rec.Body.String())
 	}
 }

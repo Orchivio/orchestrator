@@ -124,8 +124,14 @@ func TestConnectorMapsAdapterErrors(t *testing.T) {
 		code  codes.Code
 		check func(error) bool
 	}{
-		{codes.Unauthenticated, func(err error) bool { return errors.Is(err, admin.ErrCredentialRejected) }},
-		{codes.PermissionDenied, func(err error) bool { return errors.Is(err, admin.ErrCredentialRejected) }},
+		{codes.Unauthenticated, func(err error) bool {
+			var re *admin.RejectedError
+			return errors.Is(err, admin.ErrCredentialRejected) && !errors.As(err, &re)
+		}},
+		{codes.PermissionDenied, func(err error) bool {
+			var re *admin.RejectedError
+			return errors.Is(err, admin.ErrCredentialRejected) && errors.As(err, &re) && re.Reason == "org owner required"
+		}},
 		{codes.Unavailable, func(err error) bool { return errors.Is(err, admin.ErrUnavailable) }},
 		{codes.Internal, func(err error) bool { return errors.Is(err, admin.ErrAdapter) }},
 		{codes.Unknown, func(err error) bool { return errors.Is(err, admin.ErrAdapter) }},

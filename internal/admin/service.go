@@ -116,7 +116,8 @@ func (s *Service) DeleteTenantFor(ctx context.Context, p Principal, slug string,
 	return s.DeleteTenant(ctx, slug, ifVersion)
 }
 
-// UpdateTenantFor lets a tenant admin change only the display name of its own tenant.
+// UpdateTenantFor lets a tenant admin change only the display name of its own
+// tenant: the adapters are taken from the stored tenant; naming another one is ErrForbidden.
 func (s *Service) UpdateTenantFor(ctx context.Context, p Principal, t Tenant, ifVersion int64) (Tenant, error) {
 	if err := p.SeesTenant(t.Slug); err != nil {
 		return Tenant{}, err
@@ -126,9 +127,11 @@ func (s *Service) UpdateTenantFor(ctx context.Context, p Principal, t Tenant, if
 		if err != nil {
 			return Tenant{}, err
 		}
-		if t.TrackerAdapter != cur.TrackerAdapter || t.CodeHostAdapter != cur.CodeHostAdapter {
+		if t.TrackerAdapter != "" && t.TrackerAdapter != cur.TrackerAdapter ||
+			t.CodeHostAdapter != "" && t.CodeHostAdapter != cur.CodeHostAdapter {
 			return Tenant{}, ErrForbidden
 		}
+		t.TrackerAdapter, t.CodeHostAdapter = cur.TrackerAdapter, cur.CodeHostAdapter
 	}
 	return s.UpdateTenant(ctx, t, ifVersion)
 }

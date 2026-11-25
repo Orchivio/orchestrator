@@ -36,6 +36,14 @@ type NotConnectedError struct{ Reason string }
 func (e *NotConnectedError) Error() string        { return "not connected: " + e.Reason }
 func (e *NotConnectedError) Is(target error) bool { return target == ErrNotConnected }
 
+// RejectedError is ErrCredentialRejected with the adapter's explanation of a
+// refused permission, which may be shown to the user (e.g. only an
+// organization admin can connect).
+type RejectedError struct{ Reason string }
+
+func (e *RejectedError) Error() string        { return "rejected: " + e.Reason }
+func (e *RejectedError) Is(target error) bool { return target == ErrCredentialRejected }
+
 // Completed is a credential handed out by an adapter; Data is opaque.
 type Completed struct {
 	Data              []byte

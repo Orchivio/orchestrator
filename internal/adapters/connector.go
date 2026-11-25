@@ -53,8 +53,10 @@ func (c *connector) client(ctx context.Context, adapter, kind string) (connectCl
 // mapErr turns adapter gRPC codes into admin errors; it names the adapter, never credentials.
 func mapErr(adapter, op string, err error) error {
 	switch st := status.Convert(err); st.Code() {
-	case codes.Unauthenticated, codes.PermissionDenied:
+	case codes.Unauthenticated:
 		return fmt.Errorf("%s at %s: %w: %w", op, adapter, admin.ErrCredentialRejected, err)
+	case codes.PermissionDenied: // the adapter's own explanation, e.g. GitHub's installation-admin check
+		return fmt.Errorf("%s at %s: %w", op, adapter, &admin.RejectedError{Reason: st.Message()})
 	case codes.FailedPrecondition:
 		return &admin.NotConnectedError{Reason: st.Message()}
 	case codes.Unavailable, codes.DeadlineExceeded:

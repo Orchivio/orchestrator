@@ -110,7 +110,7 @@ func (e *connEnv) callback(adapter, state string) *httptest.ResponseRecorder {
 func TestCallbackPageShowsEscapedLabel(t *testing.T) {
 	e := newConnEnv(t)
 	rec := e.connect("acme", "github", "inst1")
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Verbunden: &lt;b&gt;inst1&lt;/b&gt;") ||
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Verbunden: &lt;b&gt;inst1&lt;/b&gt; (Mandant acme)") ||
 		!strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
@@ -132,6 +132,11 @@ func TestCallbackErrorPages(t *testing.T) {
 	e.conn.completeErr = &admin.NotConnectedError{Reason: "Ask an <org owner>"}
 	rec := e.connect("acme", "github", "inst1")
 	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "Ask an &lt;org owner&gt;") {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	e.conn.completeErr = &admin.RejectedError{Reason: "only an organization <admin> can connect this installation"}
+	rec = e.connect("acme", "github", "inst1")
+	if rec.Code != 403 || !strings.Contains(rec.Body.String(), "Verbindung fehlgeschlagen: only an organization &lt;admin&gt; can connect") {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
 	e.conn.completeErr = errors.Join(admin.ErrCredentialRejected, errors.New("secret detail"))
@@ -270,3 +275,20 @@ func TestTrackerConnectionKeptWhileProjectsExist(t *testing.T) {
 }
 
 func decodeLocation(rec *httptest.ResponseRecorder) string { return rec.Header().Get("Location") }
+
+func TestCallbackAnswersOnlyGetAndKeepsStateOtherwise(t *testing.T) {
+	e := newConnEnv(t)
+	if rec := e.do("POST", "/api/v1/tenants/acme/connections/github/authorize", ""); rec.Code != 200 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	e.conn.completed = admin.Completed{Data: []byte("plain"), Label: "inst1", ExternalID: "inst1"}
+	q := url.Values{"code": {"c"}, "state": {e.conn.state}}.Encode()
+	rec := httptest.NewRecorder() // a GET pattern also routes HEAD
+	e.h.ServeHTTP(rec, httptest.NewRequest("HEAD", "/oauth/callback/github?"+q, nil))
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET" {
+		t.Fatalf("HEAD: %d %v", rec.Code, rec.Header())
+	}
+	if rec := e.callback("github", e.conn.state); rec.Code != 200 {
+		t.Fatal("state consumed by HEAD:", rec.Code, rec.Body.String())
+	}
+}
