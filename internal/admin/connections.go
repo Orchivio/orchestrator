@@ -247,13 +247,22 @@ func (s *Service) DeleteConnection(ctx context.Context, tenant string, id uuid.U
 }
 
 func (s *Service) disconnect(ctx context.Context, c Connection) error {
-	sealed, err := s.store.ConnectionCredential(ctx, c.ID)
-	if err != nil {
-		return err
-	}
-	plain, err := s.box.Open(sealed.KeyID, sealed.Data)
+	plain, err := s.openCredential(ctx, c)
 	if err != nil {
 		return err
 	}
 	return s.connector.Disconnect(ctx, c.Adapter, c.Kind, plain)
+}
+
+// openCredential decrypts the stored credential of c.
+func (s *Service) openCredential(ctx context.Context, c Connection) ([]byte, error) {
+	sealed, err := s.store.ConnectionCredential(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	plain, err := s.box.Open(sealed.KeyID, sealed.Data)
+	if err != nil {
+		return nil, fmt.Errorf("connection %s of tenant %s: %w", c.ID, c.TenantSlug, err)
+	}
+	return plain, nil
 }

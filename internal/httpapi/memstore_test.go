@@ -86,7 +86,18 @@ func (m *memStore) DeleteTenant(ctx context.Context, slug string, ifVersion int6
 	if ifVersion != 0 && ifVersion != cur.Version {
 		return admin.ErrVersionMismatch
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.deleted[slug] = true
+	now := time.Now()
+	for _, mc := range m.conns {
+		mc.dead = mc.dead || mc.c.TenantSlug == slug
+	}
+	for i := range m.tokens {
+		if m.tokens[i].TenantSlug == slug && m.tokens[i].RevokedAt == nil {
+			m.tokens[i].RevokedAt = &now
+		}
+	}
 	return nil
 }
 func (m *memStore) ListProfiles(_ context.Context, tenant string) ([]admin.Profile, error) {

@@ -197,9 +197,47 @@ func (s *Service) requireNoCodeHostConnection(ctx context.Context, tenant string
 	return nil
 }
 
+// DeleteTenant soft-deletes the tenant with its connections and revokes its
+// tokens (one store transaction), then asks the adapters to revoke the
+// connection credentials (best effort, failures logged). The credentials are
+// read before and revoked after the delete, so a refused delete keeps them working.
 func (s *Service) DeleteTenant(ctx context.Context, slug string, ifVersion int64) error {
-	_, err := finish(s, ctx, struct{}{}, s.store.DeleteTenant(ctx, slug, ifVersion), "slug")
-	return err
+	open, err := s.openConnections(ctx, slug)
+	if err != nil {
+		return err
+	}
+	if err := s.store.DeleteTenant(ctx, slug, ifVersion); err != nil {
+		return err
+	}
+	for c, plain := range open {
+		if err := s.connector.Disconnect(ctx, c.Adapter, c.Kind, plain); err != nil {
+			s.log.Warn("disconnect of deleted tenant failed", "tenant", slug, "connection", c.ID, "adapter", c.Adapter, "error", err)
+		}
+	}
+	s.changed(ctx)
+	return nil
+}
+
+// openConnections decrypts the tenant's live connections; none without
+// connections support. An unusable credential is logged and skipped.
+func (s *Service) openConnections(ctx context.Context, tenant string) (map[Connection][]byte, error) {
+	if s.connectionsReady() != nil {
+		return nil, nil
+	}
+	conns, err := s.store.ListConnections(ctx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	out := map[Connection][]byte{}
+	for _, c := range conns {
+		plain, err := s.openCredential(ctx, c)
+		if err != nil {
+			s.log.Warn("connection credential unusable", "tenant", tenant, "connection", c.ID, "error", err)
+			continue
+		}
+		out[c] = plain
+	}
+	return out, nil
 }
 
 // requireTenant returns ErrNotFound unless the tenant exists and is not deleted.

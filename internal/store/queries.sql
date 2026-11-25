@@ -87,6 +87,12 @@ RETURNING *;
 UPDATE tenants SET deleted_at = $2, updated_at = $2, version = version + 1
 WHERE slug = $1 AND deleted_at IS NULL AND (sqlc.arg(if_version)::bigint = 0 OR version = sqlc.arg(if_version));
 
+-- name: DeleteConnectionsOfTenant :exec
+UPDATE connections SET deleted_at = $2, updated_at = $2 WHERE tenant_slug = $1 AND deleted_at IS NULL;
+
+-- name: RevokeTokensOfTenant :exec
+UPDATE tokens SET revoked_at = $2 WHERE tenant_slug = $1 AND revoked_at IS NULL;
+
 -- name: CountUnfinishedRunsOfTenant :one
 SELECT count(*) FROM runs WHERE tenant_id = $1 AND state NOT IN ('succeeded', 'failed', 'cancelled');
 

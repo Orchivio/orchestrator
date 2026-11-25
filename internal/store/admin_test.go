@@ -273,3 +273,53 @@ func TestTokenNotFound(t *testing.T) {
 		t.Fatalf("revoke: %v", err)
 	}
 }
+
+func TestDeleteTenantDeletesConnectionsAndRevokesTenantTokens(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	a, b := newTenant(t, s), newTenant(t, s)
+	ext, past := uuid.NewString(), base.Add(-time.Hour)
+	c := connIn(a.Slug, admin.KindCodeHost, "github", ext)
+	c.RefreshAfter = &past
+	if _, err := s.SaveConnection(ctx, c, cred); err != nil {
+		t.Fatal(err)
+	}
+	tenantTok, err := s.CreateToken(ctx, admin.Token{ID: uuid.New(), Name: "t", Prefix: "orv_x", Scope: admin.ScopeTenant,
+		TenantSlug: a.Slug, Role: admin.RoleAdmin, CreatedAt: base, ExpiresAt: base.Add(time.Hour)}, []byte(uuid.NewString()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateToken(ctx, admin.Token{ID: uuid.New(), Name: "o", Prefix: "orv_y", Scope: admin.ScopeTenant,
+		TenantSlug: b.Slug, Role: admin.RoleAdmin, CreatedAt: base, ExpiresAt: base.Add(time.Hour)}, []byte(uuid.NewString()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteTenant(ctx, a.Slug, 0); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.ListConnections(ctx, a.Slug); err != nil || len(list) != 0 {
+		t.Fatalf("connections = %v, %v", list, err)
+	}
+	claimed, _, err := s.ClaimDueConnections(ctx, base, base.Add(time.Minute))
+	for _, cl := range claimed {
+		if cl.TenantSlug == a.Slug {
+			t.Fatalf("claimed connection of deleted tenant: %+v", cl)
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoked := map[uuid.UUID]bool{}
+	tokens, err := s.ListTokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range tokens {
+		revoked[tk.ID] = tk.RevokedAt != nil
+	}
+	if !revoked[tenantTok.ID] || revoked[other.ID] {
+		t.Fatalf("revoked tenant token %v, other %v", revoked[tenantTok.ID], revoked[other.ID])
+	}
+	if _, err := s.SaveConnection(ctx, connIn(b.Slug, admin.KindCodeHost, "github", ext), cred); err != nil {
+		t.Fatalf("other tenant connects same installation: %v", err)
+	}
+}

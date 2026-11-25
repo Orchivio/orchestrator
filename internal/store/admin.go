@@ -89,8 +89,9 @@ func (s *Store) UpdateTenant(ctx context.Context, t admin.Tenant, ifVersion int6
 	return toTenant(row), nil
 }
 
-// DeleteTenant checks for unfinished runs before the soft delete.
-// ponytail: check and delete are not one transaction; a run created in between slips through, add a lock if that matters.
+// DeleteTenant checks for unfinished runs, then soft-deletes the tenant and its
+// connections and revokes its tokens in one transaction.
+// ponytail: the run check is not locked; a run created in between slips through, add a lock if that matters.
 func (s *Store) DeleteTenant(ctx context.Context, slug string, ifVersion int64) error {
 	n, err := s.q.CountUnfinishedRunsOfTenant(ctx, slug)
 	if err != nil {
@@ -99,12 +100,26 @@ func (s *Store) DeleteTenant(ctx context.Context, slug string, ifVersion int64) 
 	if n > 0 {
 		return fmt.Errorf("tenant %s has %d unfinished runs: %w", slug, n, admin.ErrInUse)
 	}
-	now := s.now()
-	rows, err := s.q.DeleteTenant(ctx, db.DeleteTenantParams{Slug: slug, DeletedAt: &now, IfVersion: ifVersion})
-	if err == nil && rows == 0 {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // no-op after commit
+	q, now := s.q.WithTx(tx), s.now()
+	rows, err := q.DeleteTenant(ctx, db.DeleteTenantParams{Slug: slug, DeletedAt: &now, IfVersion: ifVersion})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
 		return afterMiss("tenant", slug, func() error { _, e := s.GetTenant(ctx, slug); return e })
 	}
-	return err
+	if err := q.DeleteConnectionsOfTenant(ctx, db.DeleteConnectionsOfTenantParams{TenantSlug: slug, DeletedAt: &now}); err != nil {
+		return err
+	}
+	if err := q.RevokeTokensOfTenant(ctx, db.RevokeTokensOfTenantParams{TenantSlug: pgtype.Text{String: slug, Valid: true}, RevokedAt: &now}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) ListProfiles(ctx context.Context, tenant string) ([]admin.Profile, error) {

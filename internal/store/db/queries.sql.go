@@ -522,6 +522,20 @@ func (q *Queries) DeleteConnection(ctx context.Context, arg DeleteConnectionPara
 	return result.RowsAffected(), nil
 }
 
+const deleteConnectionsOfTenant = `-- name: DeleteConnectionsOfTenant :exec
+UPDATE connections SET deleted_at = $2, updated_at = $2 WHERE tenant_slug = $1 AND deleted_at IS NULL
+`
+
+type DeleteConnectionsOfTenantParams struct {
+	TenantSlug string
+	DeletedAt  *time.Time
+}
+
+func (q *Queries) DeleteConnectionsOfTenant(ctx context.Context, arg DeleteConnectionsOfTenantParams) error {
+	_, err := q.db.Exec(ctx, deleteConnectionsOfTenant, arg.TenantSlug, arg.DeletedAt)
+	return err
+}
+
 const deleteOtherTrackerConnections = `-- name: DeleteOtherTrackerConnections :exec
 UPDATE connections SET deleted_at = $1, updated_at = $1
 WHERE tenant_slug = $2 AND kind = 'tracker' AND deleted_at IS NULL
@@ -1290,6 +1304,20 @@ func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const revokeTokensOfTenant = `-- name: RevokeTokensOfTenant :exec
+UPDATE tokens SET revoked_at = $2 WHERE tenant_slug = $1 AND revoked_at IS NULL
+`
+
+type RevokeTokensOfTenantParams struct {
+	TenantSlug pgtype.Text
+	RevokedAt  *time.Time
+}
+
+func (q *Queries) RevokeTokensOfTenant(ctx context.Context, arg RevokeTokensOfTenantParams) error {
+	_, err := q.db.Exec(ctx, revokeTokensOfTenant, arg.TenantSlug, arg.RevokedAt)
+	return err
 }
 
 const saveConnection = `-- name: SaveConnection :one

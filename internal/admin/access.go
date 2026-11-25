@@ -81,13 +81,9 @@ func (s *Service) activeCredentials(ctx context.Context, t Tenant) (map[string][
 		if c.Status != StatusActive || kindOf(t, c.Adapter) != c.Kind {
 			continue
 		}
-		sealed, err := s.store.ConnectionCredential(ctx, c.ID)
+		plain, err := s.openCredential(ctx, c)
 		if err != nil {
 			return nil, err
-		}
-		plain, err := s.box.Open(sealed.KeyID, sealed.Data)
-		if err != nil {
-			return nil, fmt.Errorf("connection %s of tenant %s: %w", c.ID, t.Slug, err)
 		}
 		out[c.Kind] = append(out[c.Kind], plain)
 	}

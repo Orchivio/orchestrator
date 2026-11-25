@@ -400,3 +400,58 @@ func TestTrackerWorkspaceKeptWhileProjectsExist(t *testing.T) {
 		t.Fatalf("other workspace without projects: %v", err)
 	}
 }
+
+func TestDeleteTenantDisconnectsAndRevokesEverything(t *testing.T) {
+	e := newConnEnv(t)
+	if _, err := e.connect(t, "linear", "ws1"); err != nil {
+		t.Fatal(err)
+	}
+	gh, err := e.connect(t, "github", "inst1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	due := e.now.Add(-time.Minute)
+	if _, err := e.store.UpdateConnectionCredentialIf(ctx, gh.ID, e.store.conns[gh.ID].c.UpdatedAt, e.store.conns[gh.ID].cred, &due, admin.StatusActive); err != nil {
+		t.Fatal(err)
+	}
+	_, plain, err := e.svc.IssueTokenFor(ctx, admin.Principal{Scope: admin.ScopeInstance, Role: admin.RoleAdmin}, "acme-admin", time.Hour, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteTenant(ctx, "acme", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.conn.disconnected; len(got) != 2 || strings.Contains(e.logs.String(), "plain-") {
+		t.Fatalf("disconnected %q logs %s", got, e.logs)
+	}
+	if _, err := e.svc.Authenticate(ctx, plain); !errors.Is(err, admin.ErrUnauthorized) {
+		t.Fatalf("tenant token after delete: %v", err)
+	}
+	if claimed, _, _ := e.store.ClaimDueConnections(ctx, e.now, e.now.Add(time.Minute)); len(claimed) != 0 {
+		t.Fatalf("claimed %+v", claimed)
+	}
+	if _, err := e.svc.CreateTenant(ctx, admin.Tenant{Slug: "beta", TrackerAdapter: "linear", CodeHostAdapter: "github"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Authorize(ctx, "beta", "github"); err != nil {
+		t.Fatal(err)
+	}
+	e.conn.completed = admin.Completed{Data: []byte("plain-inst1"), Label: "inst1", ExternalID: "inst1"}
+	if _, err := e.svc.Callback(ctx, "github", map[string]string{"state": e.conn.state}); err != nil {
+		t.Fatalf("other tenant connects same installation: %v", err)
+	}
+}
+
+func TestRefusedTenantDeleteKeepsConnections(t *testing.T) {
+	e := newConnEnv(t)
+	c, err := e.connect(t, "github", "inst1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteTenant(ctx, "acme", 99); !errors.Is(err, admin.ErrVersionMismatch) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(e.conn.disconnected) != 0 || e.store.conns[c.ID].dead {
+		t.Fatalf("disconnected %d dead %v", len(e.conn.disconnected), e.store.conns[c.ID].dead)
+	}
+}

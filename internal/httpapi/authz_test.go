@@ -132,3 +132,16 @@ func TestTenantAdminCannotIssueForOtherTenant(t *testing.T) {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
 }
+
+func TestTenantTokenRejectedAfterTenantDeleted(t *testing.T) {
+	instance, tenant := tenantAdminEnv(t)
+	if rec := instance.do("DELETE", "/api/v1/tenants/acme", ""); rec.Code != http.StatusNoContent {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if rec := tenant.do("GET", "/api/v1/tokens", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if rec := instance.do("GET", "/api/v1/tenants", ""); rec.Code != http.StatusOK {
+		t.Fatal("instance token must keep working:", rec.Code, rec.Body.String())
+	}
+}
