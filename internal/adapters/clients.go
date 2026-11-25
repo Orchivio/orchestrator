@@ -124,6 +124,15 @@ type capsClient interface {
 // connFor returns the connection for addr; the capability check runs once
 // and its outcome is cached. check is called with a client on the conn.
 func (r *Registry) connFor(ctx context.Context, tenant, kind, addr string, check func(cc *grpc.ClientConn) capsClient) (*grpc.ClientConn, error) {
+	c, err := r.checkedConn(ctx, tenant, kind, addr, check)
+	if err != nil {
+		return nil, err
+	}
+	return c.cc, nil
+}
+
+// checkedConn is connFor returning the cached conn itself.
+func (r *Registry) checkedConn(ctx context.Context, tenant, kind, addr string, check func(cc *grpc.ClientConn) capsClient) (*conn, error) {
 	r.mu.Lock()
 	c, ok := r.conns[addr]
 	if !ok {
@@ -139,7 +148,7 @@ func (r *Registry) connFor(ctx context.Context, tenant, kind, addr string, check
 	if err := c.check(ctx, r.log, tenant, kind, addr, check(c.cc)); err != nil {
 		return nil, err
 	}
-	return c.cc, nil
+	return c, nil
 }
 
 func (r *Registry) tenant(name string) (config.Tenant, error) {
@@ -179,12 +188,10 @@ func (r *Registry) AdapterName(ctx context.Context, tenant, kind string) (string
 	if kind == "codehost" {
 		ref, mk = t.CodeHost, func(cc *grpc.ClientConn) capsClient { return pluginv1.NewCodeHostAdapterClient(cc) }
 	}
-	if _, err := r.connFor(ctx, tenant, kind, ref.Address, mk); err != nil {
+	c, err := r.checkedConn(ctx, tenant, kind, ref.Address, mk)
+	if err != nil {
 		return "", err
 	}
-	r.mu.Lock()
-	c := r.conns[ref.Address]
-	r.mu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.name, nil

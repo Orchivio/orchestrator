@@ -454,8 +454,8 @@ components:
       type: object
       additionalProperties: false
       properties:
-        questions: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<id> identities, e.g. jira:jdoe"}
-        tasks: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<id> identities, e.g. jira:jdoe"}
+        questions: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<id> identities, e.g. acme:jdoe"}
+        tasks: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<id> identities, e.g. acme:jdoe"}
     Project:
       type: object
       additionalProperties: false

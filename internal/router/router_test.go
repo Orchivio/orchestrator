@@ -566,3 +566,42 @@ func TestStatusMapKeysAreRunStates(t *testing.T) {
 		t.Fatalf("config states %v, router states %v", got, want)
 	}
 }
+
+// identityFixture: the actor's e-mail holds only the questions role, the system
+// identity holds the tasks role and the right to use repo "soemii/playground".
+func identityFixture(t *testing.T) (*fixture, *pluginv1.TrackerEvent) {
+	t.Helper()
+	f := newFixture(t, "soemii/playground")
+	f.tr.system = "jira"
+	p := &f.r.cfg.Current().Tenants["acme"].Projects[0]
+	p.Roles = config.Roles{Questions: []string{"mixed@example.com"}, Tasks: []string{"jira:jdoe"}}
+	p.Repos[0].Users = []string{"jira:jdoe"}
+	return f, &pluginv1.TrackerEvent{ExternalId: "e1", Kind: pluginv1.TrackerEvent_ASSIGNED, TicketRef: "ORC-12", ProjectKey: "ORC",
+		Actor: &pluginv1.Actor{Id: "5b10", Username: "jdoe", Email: "mixed@example.com"}}
+}
+
+func TestHandleKeepsTaskWhenEmailOnlyHoldsQuestionsRole(t *testing.T) {
+	f, ev := identityFixture(t)
+	handle(t, f, ev)
+	if len(f.s.runs) != 1 || f.s.runs[0].Kind != classifier.KindTask {
+		t.Fatalf("runs = %+v", f.s.runs)
+	}
+	if got := f.s.inputs[0].ActorEmail; got != "jira:jdoe" {
+		t.Fatalf("stored identity = %q, want the tasks identity", got)
+	}
+}
+
+func TestStartFollowUpAllowsRepoViaSystemIdentity(t *testing.T) {
+	f, ev := identityFixture(t)
+	handle(t, f, ev)
+	f.s.runs[0].State = StateSucceeded
+	f.s.inputs = append(f.s.inputs, &Input{ID: uuid.New(), Tenant: "acme", ConversationID: f.s.convs[0].ID,
+		ActorEmail: classifier.FirstMatch(f.r.cfg.Current().Tenants["acme"].Projects[0], classifier.Identities("jira", ev.Actor)), Body: "more"})
+	if err := f.r.StartFollowUp(context.Background(), f.s.convs[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	last := f.s.runs[len(f.s.runs)-1]
+	if last.Kind != classifier.KindTask || len(last.Repos) != 1 || last.Repos[0] != "soemii/playground" {
+		t.Fatalf("follow-up run = %+v", last)
+	}
+}

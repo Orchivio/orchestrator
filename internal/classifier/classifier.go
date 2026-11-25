@@ -152,12 +152,20 @@ func Identities(system string, a *pluginv1.Actor) []string {
 	return ids
 }
 
-// FirstMatch returns the first identity found in any role list of p, else the
-// first identity, else "".
+// FirstMatch picks the identity to store for an input: the first one found in
+// the tasks role, else in the questions role, else in a repo users list, else
+// the first one. The stored identity is all a later run sees of the actor, so
+// the strongest permission must survive.
 func FirstMatch(p config.Project, actors []string) string {
-	for _, a := range actors {
-		if HasAnyRole(p, []string{a}) {
-			return a
+	var repoUsers []string
+	for _, r := range p.Repos {
+		repoUsers = append(repoUsers, r.Users...)
+	}
+	for _, list := range [][]string{p.Roles.Tasks, p.Roles.Questions, repoUsers} {
+		for _, a := range actors {
+			if contains(list, a) {
+				return a
+			}
 		}
 	}
 	if len(actors) > 0 {
