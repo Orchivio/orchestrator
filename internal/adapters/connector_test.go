@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,10 +30,12 @@ type connectServer struct {
 	name        string
 	completeErr error
 	disconnects [][]byte
+	fields      []*pluginv1.ConnectField
+	gotFields   map[string]string
 }
 
 func (s *connectServer) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
-	return &pluginv1.Capabilities{ContractVersion: contractVersion, AdapterName: s.name}, nil
+	return &pluginv1.Capabilities{ContractVersion: contractVersion, AdapterName: s.name, ConnectFields: s.fields}, nil
 }
 
 func (s *connectServer) BeginConnect(_ context.Context, r *pluginv1.BeginConnectRequest) (*pluginv1.BeginConnectResponse, error) {
@@ -40,6 +43,7 @@ func (s *connectServer) BeginConnect(_ context.Context, r *pluginv1.BeginConnect
 }
 
 func (s *connectServer) CompleteConnect(_ context.Context, r *pluginv1.CompleteConnectRequest) (*pluginv1.CompleteConnectResponse, error) {
+	s.gotFields = r.GetFields()
 	if s.completeErr != nil {
 		return nil, s.completeErr
 	}
@@ -175,5 +179,34 @@ func TestConnectorMapsAdapterErrors(t *testing.T) {
 		if _, err := c.CompleteConnect(ctx, "github", admin.KindCodeHost, "http://cb", nil); !tc.check(err) {
 			t.Errorf("%v: err = %v", tc.code, err)
 		}
+	}
+}
+
+func TestConnectorFormListsFieldsAndSendsValues(t *testing.T) {
+	c, _, ch := newTestConnector(t)
+	ch.fields = []*pluginv1.ConnectField{{Name: "token", Label: "Token", Secret: true, Required: true}}
+	form, err := c.Form(t.Context(), "github", admin.KindCodeHost)
+	if err != nil || len(form) != 1 || form[0] != (admin.FormField{Name: "token", Label: "Token", Secret: true, Required: true}) {
+		t.Fatal(form, err)
+	}
+	done, err := c.CompleteForm(t.Context(), "github", admin.KindCodeHost, map[string]string{"token": "abc"})
+	if err != nil || ch.gotFields["token"] != "abc" || string(done.Data) != "cred" {
+		t.Fatal(done, err, ch.gotFields)
+	}
+}
+
+func TestConnectorCompleteFormRedactsSecretsAndMapsInvalidArgument(t *testing.T) {
+	c, _, ch := newTestConnector(t)
+	fields := map[string]string{"token": "s3cr3t-xyz"}
+	ch.completeErr = status.Error(codes.InvalidArgument, "token bad")
+	_, err := c.CompleteForm(t.Context(), "github", admin.KindCodeHost, fields)
+	var re *admin.RejectedError
+	if !errors.As(err, &re) || re.Reason != "token bad" {
+		t.Fatal(err)
+	}
+	ch.completeErr = status.Error(codes.Internal, "boom s3cr3t-xyz")
+	_, err = c.CompleteForm(t.Context(), "github", admin.KindCodeHost, fields)
+	if err == nil || strings.Contains(err.Error(), "s3cr3t-xyz") || !errors.Is(err, admin.ErrAdapter) {
+		t.Fatal(err)
 	}
 }

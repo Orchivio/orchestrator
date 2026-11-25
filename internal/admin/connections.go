@@ -51,11 +51,21 @@ type Completed struct {
 	Label, ExternalID string
 }
 
+// FormField is one input of an adapter's connect form; Secret fields are never echoed.
+type FormField struct {
+	Name, Label      string
+	Secret, Required bool
+}
+
 // Connector talks to the adapters named in ORCHIVIO_ADAPTERS; kind selects
 // the tracker or code host service of the adapter.
 type Connector interface {
 	BeginConnect(ctx context.Context, adapter, kind, tenant, redirectURI, state string) (string, error)
 	CompleteConnect(ctx context.Context, adapter, kind, redirectURI string, query map[string]string) (Completed, error)
+	// Form lists the fields the adapter wants for connecting by form; empty means OAuth only.
+	Form(ctx context.Context, adapter, kind string) ([]FormField, error)
+	// CompleteForm connects with the filled-in fields; errors never contain the values.
+	CompleteForm(ctx context.Context, adapter, kind string, fields map[string]string) (Completed, error)
 	Refresh(ctx context.Context, adapter, kind string, data []byte, refreshAfter *time.Time) (Completed, error)
 	Disconnect(ctx context.Context, adapter, kind string, data []byte) error
 	CheckAccess(ctx context.Context, adapter, kind string, creds [][]byte, items []string) ([]string, error)
@@ -131,6 +141,17 @@ func (s *Service) Callback(ctx context.Context, adapter string, query map[string
 	if err != nil {
 		return Connection{}, fmt.Errorf("complete connect at %s for tenant %s: %w", adapter, tenant, err)
 	}
+	saved, err := s.storeCompleted(ctx, tenant, kind, adapter, done)
+	if err != nil {
+		return Connection{}, err
+	}
+	return saved, nil
+}
+
+// storeCompleted seals and saves a connection the adapter completed; for a
+// tracker it switches workspaces like switchTracker. A connection to the same
+// external id is reconnected in place.
+func (s *Service) storeCompleted(ctx context.Context, tenant, kind, adapter string, done Completed) (Connection, error) {
 	if done.ExternalID == "" {
 		return Connection{}, fmt.Errorf("%w: %s returned no external id", ErrAdapter, adapter)
 	}
@@ -152,6 +173,76 @@ func (s *Service) Callback(ctx context.Context, adapter string, query map[string
 	}
 	s.changed(ctx)
 	return saved, nil
+}
+
+// ConnectForm is the form tenant fills in to connect adapter; ErrNotFound if
+// the adapter only connects through OAuth.
+func (s *Service) ConnectForm(ctx context.Context, tenant, adapter string) ([]FormField, error) {
+	fields, _, err := s.formFor(ctx, tenant, adapter)
+	return fields, err
+}
+
+func (s *Service) formFor(ctx context.Context, tenant, adapter string) ([]FormField, string, error) {
+	if err := s.connectionsReady(); err != nil {
+		return nil, "", err
+	}
+	t, err := s.store.GetTenant(ctx, tenant)
+	if err != nil {
+		return nil, "", err
+	}
+	kind := kindOf(t, adapter)
+	if kind == "" {
+		return nil, "", invalid([]config.FieldError{{Field: "adapter", Message: "not assigned to tenant " + quote(tenant)}})
+	}
+	fields, err := s.connector.Form(ctx, adapter, kind)
+	if err != nil {
+		return nil, "", fmt.Errorf("form of %s: %w", adapter, err)
+	}
+	if len(fields) == 0 {
+		return nil, "", fmt.Errorf("adapter %s has no connect form: %w", adapter, ErrNotFound)
+	}
+	return fields, kind, nil
+}
+
+// FormConnect connects tenant to adapter with the form values and stores the
+// result like Callback. Missing or unknown fields are refused before the
+// adapter is called; the adapter's refusal of the values is a field problem.
+// ifVersion only marks intent to replace (the HTTP layer answers 200 instead
+// of 201): connections carry no version, a reconnect is keyed by external id.
+func (s *Service) FormConnect(ctx context.Context, tenant, adapter string, fields map[string]string, ifVersion *int64) (Connection, error) {
+	form, kind, err := s.formFor(ctx, tenant, adapter)
+	if err != nil {
+		return Connection{}, err
+	}
+	if err := invalid(checkFormValues(form, fields)); err != nil {
+		return Connection{}, err
+	}
+	done, err := s.connector.CompleteForm(ctx, adapter, kind, fields)
+	var rejected *RejectedError
+	if errors.As(err, &rejected) {
+		return Connection{}, invalid([]config.FieldError{{Field: "fields", Message: rejected.Reason}})
+	}
+	if err != nil {
+		return Connection{}, fmt.Errorf("complete form at %s for tenant %s: %w", adapter, tenant, err)
+	}
+	return s.storeCompleted(ctx, tenant, kind, adapter, done)
+}
+
+func checkFormValues(form []FormField, values map[string]string) []config.FieldError {
+	var problems []config.FieldError
+	known := map[string]bool{}
+	for _, f := range form {
+		known[f.Name] = true
+		if f.Required && strings.TrimSpace(values[f.Name]) == "" {
+			problems = append(problems, config.FieldError{Field: "fields." + f.Name, Message: "is required"})
+		}
+	}
+	for name := range values {
+		if !known[name] {
+			problems = append(problems, config.FieldError{Field: "fields." + name, Message: "is not a field of this form"})
+		}
+	}
+	return problems
 }
 
 // consumeState spends the state and checks it was issued for adapter and the
