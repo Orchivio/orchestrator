@@ -81,7 +81,7 @@ type HistoryEntry struct {
 
 // Store is the persistence port of the router.
 type Store interface {
-	MarkInbound(ctx context.Context, source, externalID string) (bool, error)
+	MarkInbound(ctx context.Context, tenant, source, externalID string) (bool, error)
 	FindConversation(ctx context.Context, tenant, ticketRef string) (*Conversation, error) // nil, nil if none
 	GetConversation(ctx context.Context, id uuid.UUID) (*Conversation, error)
 	CreateConversation(ctx context.Context, c Conversation) error

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/secretbox"
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
@@ -21,16 +23,25 @@ const (
 
 // Service validates writes, enforces immutability and notifies OnChange.
 type Service struct {
-	store    Store
-	adapters map[string]string // adapter name -> address
-	now      func() time.Time
-	newID    func() uuid.UUID
-	log      *slog.Logger
-	onChange func(context.Context) error
+	store     Store
+	adapters  map[string]string // adapter name -> address
+	box       *secretbox.Box    // nil: connections unavailable
+	connector Connector         // nil: connections unavailable
+	publicURL string
+	now       func() time.Time
+	newID     func() uuid.UUID
+	log       *slog.Logger
+	onChange  func(context.Context) error
+
+	refreshTimeout, checkTimeout time.Duration // per adapter call
 }
 
-func NewService(st Store, adapters map[string]string, now func() time.Time, newID func() uuid.UUID, log *slog.Logger) *Service {
-	return &Service{store: st, adapters: adapters, now: now, newID: newID, log: log}
+// NewService builds the service. box and conn may be nil; connection
+// operations then fail with ErrUnavailable.
+func NewService(st Store, adapters map[string]string, box *secretbox.Box, conn Connector, publicURL string,
+	now func() time.Time, newID func() uuid.UUID, log *slog.Logger) *Service {
+	return &Service{store: st, adapters: adapters, box: box, connector: conn, publicURL: publicURL, now: now, newID: newID, log: log,
+		refreshTimeout: refreshTimeout, checkTimeout: checkTimeout}
 }
 
 // OnChange registers a hook run after every successful write. Its error is
@@ -68,6 +79,62 @@ func invalid(fields []config.FieldError) error {
 // --- tenants ---
 
 func (s *Service) ListTenants(ctx context.Context) ([]Tenant, error) { return s.store.ListTenants(ctx) }
+
+// ListTenantsFor lists the tenants p may see: all for an instance admin, its own for a tenant admin.
+func (s *Service) ListTenantsFor(ctx context.Context, p Principal) ([]Tenant, error) {
+	if err := p.authorized(); err != nil {
+		return nil, err
+	}
+	if p.IsInstanceAdmin() {
+		return s.ListTenants(ctx)
+	}
+	t, err := s.GetTenant(ctx, p.TenantSlug)
+	if errors.Is(err, ErrNotFound) {
+		return []Tenant{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []Tenant{t}, nil
+}
+
+// CreateTenantFor and DeleteTenantFor are reserved to instance admins.
+func (s *Service) CreateTenantFor(ctx context.Context, p Principal, t Tenant) (Tenant, error) {
+	if err := p.requireInstanceAdmin(); err != nil {
+		return Tenant{}, err
+	}
+	return s.CreateTenant(ctx, t)
+}
+
+func (s *Service) DeleteTenantFor(ctx context.Context, p Principal, slug string, ifVersion int64) error {
+	if err := p.SeesTenant(slug); err != nil {
+		return err
+	}
+	if err := p.requireInstanceAdmin(); err != nil {
+		return err
+	}
+	return s.DeleteTenant(ctx, slug, ifVersion)
+}
+
+// UpdateTenantFor lets a tenant admin change only the display name of its own
+// tenant: the adapters are taken from the stored tenant; naming another one is ErrForbidden.
+func (s *Service) UpdateTenantFor(ctx context.Context, p Principal, t Tenant, ifVersion int64) (Tenant, error) {
+	if err := p.SeesTenant(t.Slug); err != nil {
+		return Tenant{}, err
+	}
+	if !p.IsInstanceAdmin() {
+		cur, err := s.store.GetTenant(ctx, t.Slug)
+		if err != nil {
+			return Tenant{}, err
+		}
+		if t.TrackerAdapter != "" && t.TrackerAdapter != cur.TrackerAdapter ||
+			t.CodeHostAdapter != "" && t.CodeHostAdapter != cur.CodeHostAdapter {
+			return Tenant{}, ErrForbidden
+		}
+		t.TrackerAdapter, t.CodeHostAdapter = cur.TrackerAdapter, cur.CodeHostAdapter
+	}
+	return s.UpdateTenant(ctx, t, ifVersion)
+}
 func (s *Service) GetTenant(ctx context.Context, slug string) (Tenant, error) {
 	return s.store.GetTenant(ctx, slug)
 }
@@ -108,14 +175,72 @@ func (s *Service) UpdateTenant(ctx context.Context, t Tenant, ifVersion int64) (
 	if err := invalid(errs); err != nil {
 		return Tenant{}, err
 	}
+	if t.CodeHostAdapter != cur.CodeHostAdapter {
+		if err := s.requireNoCodeHostConnection(ctx, t.Slug); err != nil {
+			return Tenant{}, err
+		}
+	}
 	t.CreatedAt, t.UpdatedAt = cur.CreatedAt, s.now()
 	updated, err := s.store.UpdateTenant(ctx, t, ifVersion)
 	return finish(s, ctx, updated, err, "slug")
 }
 
+// requireNoCodeHostConnection is ErrInUse while the tenant has an active code
+// host connection: every one must use the tenant's code host adapter.
+func (s *Service) requireNoCodeHostConnection(ctx context.Context, tenant string) error {
+	conns, err := s.store.ListConnections(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	for _, c := range conns {
+		if c.Kind == KindCodeHost && c.Status == StatusActive {
+			return fmt.Errorf("tenant %s has active code host connection %s: %w", tenant, c.ID, ErrInUse)
+		}
+	}
+	return nil
+}
+
+// DeleteTenant soft-deletes the tenant with its connections and revokes its
+// tokens (one store transaction), then asks the adapters to revoke the
+// connection credentials (best effort, failures logged). The credentials are
+// read before and revoked after the delete, so a refused delete keeps them working.
 func (s *Service) DeleteTenant(ctx context.Context, slug string, ifVersion int64) error {
-	_, err := finish(s, ctx, struct{}{}, s.store.DeleteTenant(ctx, slug, ifVersion), "slug")
-	return err
+	open, err := s.openConnections(ctx, slug)
+	if err != nil {
+		return err
+	}
+	if err := s.store.DeleteTenant(ctx, slug, ifVersion); err != nil {
+		return err
+	}
+	for c, plain := range open {
+		if err := s.connector.Disconnect(ctx, c.Adapter, c.Kind, plain); err != nil {
+			s.log.Warn("disconnect of deleted tenant failed", "tenant", slug, "connection", c.ID, "adapter", c.Adapter, "error", err)
+		}
+	}
+	s.changed(ctx)
+	return nil
+}
+
+// openConnections decrypts the tenant's live connections; none without
+// connections support. An unusable credential is logged and skipped.
+func (s *Service) openConnections(ctx context.Context, tenant string) (map[Connection][]byte, error) {
+	if s.connectionsReady() != nil {
+		return nil, nil
+	}
+	conns, err := s.store.ListConnections(ctx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	out := map[Connection][]byte{}
+	for _, c := range conns {
+		plain, err := s.openCredential(ctx, c)
+		if err != nil {
+			s.log.Warn("connection credential unusable", "tenant", tenant, "connection", c.ID, "error", err)
+			continue
+		}
+		out[c] = plain
+	}
+	return out, nil
 }
 
 // requireTenant returns ErrNotFound unless the tenant exists and is not deleted.
@@ -242,7 +367,7 @@ func (s *Service) CreateProject(ctx context.Context, p Project) (Project, error)
 	if err != nil {
 		return Project{}, err
 	}
-	if err := invalid(errs); err != nil {
+	if err := s.validateAccess(ctx, tenant, p, errs); err != nil {
 		return Project{}, err
 	}
 	p.ID = s.newID()
@@ -263,7 +388,11 @@ func (s *Service) UpdateProject(ctx context.Context, p Project, ifVersion int64)
 	if p.TrackerKey != cur.TrackerKey {
 		errs = append(errs, config.FieldError{Field: "trackerKey", Message: msgImmutable})
 	}
-	if err := invalid(errs); err != nil {
+	tenant, err := s.store.GetTenant(ctx, p.TenantSlug)
+	if err != nil {
+		return Project{}, err
+	}
+	if err := s.validateAccess(ctx, tenant, p, errs); err != nil {
 		return Project{}, err
 	}
 	p.CreatedAt, p.UpdatedAt = cur.CreatedAt, s.now()

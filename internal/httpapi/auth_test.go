@@ -38,13 +38,13 @@ func serve(logs io.Writer, header string) *httptest.ResponseRecorder {
 }
 
 func serveWith(st tokenStub, logs io.Writer, header string) *httptest.ResponseRecorder {
-	svc := admin.NewService(st, nil, time.Now, uuid.New, slog.New(slog.NewTextHandler(logs, nil)))
+	svc := admin.NewService(st, nil, nil, nil, "", time.Now, uuid.New, slog.New(slog.NewTextHandler(logs, nil)))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/tenants", nil)
 	if header != "" {
 		req.Header.Set("Authorization", header)
 	}
-	httpapi.RequireInstanceAdmin(svc, okHandler).ServeHTTP(rec, req)
+	httpapi.Authenticate(svc, okHandler).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -80,7 +80,7 @@ func TestValidInstanceAdminTokenPasses(t *testing.T) {
 }
 
 func TestOtherScopeOrRoleRejected(t *testing.T) {
-	for _, tok := range []admin.Token{tokenOf("tenant", admin.RoleAdmin), tokenOf(admin.ScopeInstance, "viewer")} {
+	for _, tok := range []admin.Token{tokenOf(admin.ScopeTenant, admin.RoleAdmin), tokenOf(admin.ScopeInstance, "viewer")} {
 		if rec := serveWith(tokenStub{tok: tok}, io.Discard, validToken); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("%+v: code = %d", tok, rec.Code)
 		}
@@ -95,5 +95,24 @@ func TestStoreOutageIs500AndLoggedWithoutToken(t *testing.T) {
 		strings.Contains(rec.Body.String(), "connection refused") || !strings.Contains(logs.String(), "token lookup failed") ||
 		strings.Contains(all, "orv_valid") {
 		t.Fatalf("code=%d body=%s logs=%s", rec.Code, rec.Body, logs.String())
+	}
+}
+
+func TestTenantAdminTokenPassesWithPrincipal(t *testing.T) {
+	tok := tokenOf(admin.ScopeTenant, admin.RoleAdmin)
+	tok.TenantSlug = "acme"
+	svc := admin.NewService(tokenStub{tok: tok}, nil, nil, nil, "", time.Now, uuid.New, slog.New(slog.DiscardHandler))
+	var got admin.Principal
+	h := httpapi.Authenticate(svc, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = httpapi.PrincipalFrom(r.Context())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest("GET", "/api/v1/tenants", nil)
+	req.Header.Set("Authorization", validToken)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	want := admin.Principal{Scope: admin.ScopeTenant, TenantSlug: "acme", Role: admin.RoleAdmin}
+	if rec.Code != http.StatusNoContent || got != want {
+		t.Fatalf("code = %d principal = %+v", rec.Code, got)
 	}
 }

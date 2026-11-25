@@ -52,7 +52,7 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 	if !ok {
 		return nil
 	}
-	fresh, err := r.store.MarkInbound(ctx, tn.Tracker.Name, ev.GetExternalId())
+	fresh, err := r.store.MarkInbound(ctx, tenant, tn.Tracker.Name, ev.GetExternalId())
 	if err != nil {
 		return fmt.Errorf("mark inbound %s: %w", ev.GetTicketRef(), err)
 	}

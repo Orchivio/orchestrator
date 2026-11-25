@@ -31,6 +31,8 @@ var AdminRoutes = []Route{
 	{"GET", "/tenants/{slug}/profiles/{id}"}, {"PUT", "/tenants/{slug}/profiles/{id}"}, {"DELETE", "/tenants/{slug}/profiles/{id}"},
 	{"GET", "/tenants/{slug}/projects"}, {"POST", "/tenants/{slug}/projects"},
 	{"GET", "/tenants/{slug}/projects/{id}"}, {"PUT", "/tenants/{slug}/projects/{id}"}, {"DELETE", "/tenants/{slug}/projects/{id}"},
+	{"GET", "/tenants/{slug}/connections"}, {"POST", "/tenants/{slug}/connections/{adapter}/authorize"},
+	{"GET", "/tenants/{slug}/connections/{id}"}, {"DELETE", "/tenants/{slug}/connections/{id}"},
 	{"GET", "/tokens"}, {"POST", "/tokens"}, {"DELETE", "/tokens/{id}"},
 }
 
@@ -39,7 +41,8 @@ type adminAPI struct {
 	log *slog.Logger
 }
 
-// NewAdmin serves the admin REST API under /api/v1, guarded by RequireInstanceAdmin.
+// NewAdmin serves the admin REST API under /api/v1, guarded by Authenticate.
+// Every /tenants/{slug} route first checks that the principal sees that tenant.
 func NewAdmin(svc *admin.Service, log *slog.Logger) http.Handler {
 	a := &adminAPI{svc: svc, log: log}
 	handlers := map[string]http.HandlerFunc{
@@ -50,8 +53,12 @@ func NewAdmin(svc *admin.Service, log *slog.Logger) http.Handler {
 		"DELETE /tenants/{slug}/profiles/{id}": a.deleteProfile,
 		"GET /tenants/{slug}/projects":         a.listProjects, "POST /tenants/{slug}/projects": a.createProject,
 		"GET /tenants/{slug}/projects/{id}": a.getProject, "PUT /tenants/{slug}/projects/{id}": a.putProject,
-		"DELETE /tenants/{slug}/projects/{id}": a.deleteProject,
-		"GET /tokens":                          a.listTokens, "POST /tokens": a.createToken, "DELETE /tokens/{id}": a.revokeToken,
+		"DELETE /tenants/{slug}/projects/{id}":                 a.deleteProject,
+		"GET /tenants/{slug}/connections":                      a.listConnections,
+		"POST /tenants/{slug}/connections/{adapter}/authorize": a.authorize,
+		"GET /tenants/{slug}/connections/{id}":                 a.getConnection,
+		"DELETE /tenants/{slug}/connections/{id}":              a.deleteConnection,
+		"GET /tokens": a.listTokens, "POST /tokens": a.createToken, "DELETE /tokens/{id}": a.revokeToken,
 	}
 	mux := http.NewServeMux()
 	for _, r := range AdminRoutes {
@@ -59,9 +66,30 @@ func NewAdmin(svc *admin.Service, log *slog.Logger) http.Handler {
 		if !ok {
 			panic("httpapi: no handler for " + r.Method + " " + r.Path)
 		}
+		if strings.Contains(r.Path, "{slug}") {
+			h = a.tenantScoped(h)
+		}
 		mux.Handle(r.Method+" "+adminPrefix+r.Path, h)
 	}
-	return RequireInstanceAdmin(svc, mux)
+	return Authenticate(svc, mux)
+}
+
+// tenantScoped answers 404 before h runs when the principal may not see the path's tenant.
+func (a *adminAPI) tenantScoped(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := principal(r).SeesTenant(r.PathValue("slug")); err != nil {
+			a.fail(w, err)
+			return
+		}
+		h(w, r)
+	}
+}
+
+// principal is the caller; Authenticate guarantees one. The zero value is
+// ErrForbidden in every admin.Service ...For function and in SeesTenant.
+func principal(r *http.Request) admin.Principal {
+	p, _ := PrincipalFrom(r.Context())
+	return p
 }
 
 // --- DTOs (server-managed fields are accepted and ignored on input) ---
@@ -108,6 +136,7 @@ type tokenDTO struct {
 	Name      string     `json:"name"`
 	Prefix    string     `json:"prefix"`
 	Scope     string     `json:"scope"`
+	Tenant    string     `json:"tenant,omitempty"`
 	Role      string     `json:"role"`
 	CreatedAt time.Time  `json:"createdAt"`
 	ExpiresAt time.Time  `json:"expiresAt"`
@@ -122,6 +151,7 @@ type tokenCreatedDTO struct {
 type tokenRequest struct {
 	Name      string `json:"name"`
 	ExpiresIn string `json:"expiresIn"`
+	Tenant    string `json:"tenant"`
 }
 
 func tenantOut(t admin.Tenant) tenantDTO {
@@ -138,7 +168,7 @@ func projectOut(p admin.Project) projectDTO {
 }
 
 func tokenOut(t admin.Token) tokenDTO {
-	return tokenDTO{t.ID.String(), t.Name, t.Prefix, t.Scope, t.Role, t.CreatedAt, t.ExpiresAt, t.RevokedAt}
+	return tokenDTO{t.ID.String(), t.Name, t.Prefix, t.Scope, t.TenantSlug, t.Role, t.CreatedAt, t.ExpiresAt, t.RevokedAt}
 }
 
 func reposOut(repos []config.Repo) []config.Repo {
@@ -250,10 +280,22 @@ func (a *adminAPI) fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &ve):
 		writeProblemFields(w, http.StatusUnprocessableEntity, "Validation Failed", "One or more fields are invalid.", ve.Fields)
+	case errors.Is(err, admin.ErrForbidden):
+		writeProblem(w, http.StatusForbidden, "Forbidden", "This token may not perform this action.")
 	case errors.Is(err, admin.ErrNotFound):
 		writeProblem(w, http.StatusNotFound, "Not Found", "The resource does not exist.")
+	case errors.Is(err, admin.ErrProjectsExist):
+		writeProblem(w, http.StatusConflict, "Conflict", "The tenant still has projects on this tracker workspace; delete its projects first.")
 	case errors.Is(err, admin.ErrInUse):
 		writeProblem(w, http.StatusConflict, "Conflict", "The resource is still in use.")
+	case errors.Is(err, admin.ErrConflict):
+		writeProblem(w, http.StatusConflict, "Conflict", "Already connected to another tenant.")
+	case errors.Is(err, admin.ErrUnavailable):
+		a.log.Warn("connections unavailable", "err", err)
+		writeProblem(w, http.StatusServiceUnavailable, "Service Unavailable", "Connections are not available right now.")
+	case errors.Is(err, admin.ErrAdapter), errors.Is(err, admin.ErrCredentialRejected), errors.Is(err, admin.ErrNotConnected):
+		a.log.Warn("adapter request failed", "err", err)
+		writeProblem(w, http.StatusBadGateway, "Bad Gateway", "The adapter could not handle the request.")
 	case errors.Is(err, admin.ErrVersionMismatch):
 		writeProblem(w, http.StatusPreconditionFailed, "Precondition Failed", "The resource was changed; reload and retry.")
 	default:
@@ -279,7 +321,7 @@ func list[T, D any](a *adminAPI, w http.ResponseWriter, items []T, err error, ou
 // --- tenants ---
 
 func (a *adminAPI) listTenants(w http.ResponseWriter, r *http.Request) {
-	items, err := a.svc.ListTenants(r.Context())
+	items, err := a.svc.ListTenantsFor(r.Context(), principal(r))
 	list(a, w, items, err, tenantOut)
 }
 
@@ -288,7 +330,7 @@ func (a *adminAPI) createTenant(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &d) {
 		return
 	}
-	t, err := a.svc.CreateTenant(r.Context(), admin.Tenant{Slug: d.Slug, DisplayName: d.DisplayName,
+	t, err := a.svc.CreateTenantFor(r.Context(), principal(r), admin.Tenant{Slug: d.Slug, DisplayName: d.DisplayName,
 		TrackerAdapter: d.TrackerAdapter, CodeHostAdapter: d.CodeHostAdapter})
 	if err != nil {
 		a.fail(w, err)
@@ -312,7 +354,7 @@ func (a *adminAPI) putTenant(w http.ResponseWriter, r *http.Request) {
 	if !ok || !decodeBody(w, r, &d) {
 		return
 	}
-	t, err := a.svc.UpdateTenant(r.Context(), admin.Tenant{Slug: r.PathValue("slug"), DisplayName: d.DisplayName,
+	t, err := a.svc.UpdateTenantFor(r.Context(), principal(r), admin.Tenant{Slug: r.PathValue("slug"), DisplayName: d.DisplayName,
 		TrackerAdapter: d.TrackerAdapter, CodeHostAdapter: d.CodeHostAdapter}, version)
 	if err != nil {
 		a.fail(w, err)
@@ -324,7 +366,7 @@ func (a *adminAPI) putTenant(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	version, ok := ifMatch(w, r)
 	if ok {
-		a.noContent(w, a.svc.DeleteTenant(r.Context(), r.PathValue("slug"), version))
+		a.noContent(w, a.svc.DeleteTenantFor(r.Context(), principal(r), r.PathValue("slug"), version))
 	}
 }
 
@@ -475,7 +517,7 @@ func (a *adminAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
 // --- tokens ---
 
 func (a *adminAPI) listTokens(w http.ResponseWriter, r *http.Request) {
-	items, err := a.svc.ListTokens(r.Context())
+	items, err := a.svc.ListTokensFor(r.Context(), principal(r))
 	list(a, w, items, err, tokenOut)
 }
 
@@ -492,7 +534,7 @@ func (a *adminAPI) createToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	tok, plaintext, err := a.svc.IssueToken(r.Context(), req.Name, ttl)
+	tok, plaintext, err := a.svc.IssueTokenFor(r.Context(), principal(r), req.Name, ttl, req.Tenant)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -502,6 +544,6 @@ func (a *adminAPI) createToken(w http.ResponseWriter, r *http.Request) {
 
 func (a *adminAPI) revokeToken(w http.ResponseWriter, r *http.Request) {
 	if id, ok := pathID(w, r); ok {
-		a.noContent(w, a.svc.RevokeToken(r.Context(), id))
+		a.noContent(w, a.svc.RevokeTokenFor(r.Context(), principal(r), id))
 	}
 }

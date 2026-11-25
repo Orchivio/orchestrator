@@ -18,12 +18,18 @@ const (
 // Config holds all tenants keyed by tenant name.
 type Config struct{ Tenants map[string]Tenant }
 
+// Tenant credentials are decrypted connection credentials, opaque to the
+// orchestrator; they live only in memory and must never be logged.
 type Tenant struct {
 	Name     string
 	Tracker  AdapterRef
 	CodeHost AdapterRef
 	Profiles map[string]Profile
 	Projects []Project
+	// TrackerCredential is nil without an active tracker connection.
+	TrackerCredential []byte
+	// CodeHostCredentials holds one entry per active code host connection.
+	CodeHostCredentials [][]byte
 }
 
 type AdapterRef struct {

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -24,7 +25,9 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
@@ -37,19 +40,76 @@ import (
 	"github.com/orchivio/orchestrator/internal/orchestrator"
 	"github.com/orchivio/orchestrator/internal/reporter"
 	"github.com/orchivio/orchestrator/internal/router"
+	"github.com/orchivio/orchestrator/internal/secretbox"
 	"github.com/orchivio/orchestrator/internal/store"
 )
 
 const (
-	publicURL = "http://timeline.test"
-	userEmail = "dev@example.com"
-	workerID  = "w1"
-	repoSlug  = "acme/playground"
-	waitMax   = 5 * time.Second
+	publicURL     = "http://timeline.test"
+	userEmail     = "dev@example.com"
+	workerID      = "w1"
+	repoSlug      = "acme/playground"
+	waitMax       = 5 * time.Second
+	secretKey     = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+	trackerCred   = "linear-token-ws1"
+	codeHostCred  = "github-installation-42"
+	repoToken     = "ghs_short_lived"
+	providerLogin = "https://provider.test/authorize?state="
+)
+
+// errNoCredential is what the fakes answer to a call without the tenant's credential.
+var errNoCredential = status.Error(codes.Unauthenticated, "missing or wrong credential")
+
+func hasCred(c *pluginv1.Credential, want string) bool { return string(c.GetData()) == want }
+
+func hasCreds(cs []*pluginv1.Credential, want string) bool {
+	return len(cs) == 1 && hasCred(cs[0], want)
+}
+
+// connectFake implements the connection RPCs both fakes share: it hands out
+// cred and allows the items in allowed.
+type connectFake struct {
+	cred, externalID string
+	allowed          []string
+}
+
+func (f connectFake) BeginConnect(_ context.Context, r *pluginv1.BeginConnectRequest) (*pluginv1.BeginConnectResponse, error) {
+	return &pluginv1.BeginConnectResponse{Url: providerLogin + url.QueryEscape(r.GetState())}, nil
+}
+
+func (f connectFake) CompleteConnect(_ context.Context, r *pluginv1.CompleteConnectRequest) (*pluginv1.CompleteConnectResponse, error) {
+	if r.GetQuery()["code"] != "granted" {
+		return nil, status.Error(codes.PermissionDenied, "no grant")
+	}
+	return &pluginv1.CompleteConnectResponse{Credential: &pluginv1.Credential{Data: []byte(f.cred)}, Label: "Acme " + f.externalID, ExternalId: f.externalID}, nil
+}
+
+func (f connectFake) CheckAccess(_ context.Context, r *pluginv1.CheckAccessRequest) (*pluginv1.CheckAccessResponse, error) {
+	if !hasCreds(r.GetCredentials(), f.cred) {
+		return nil, errNoCredential
+	}
+	var denied []string
+	for _, it := range r.GetItems() {
+		if !slices.Contains(f.allowed, it) {
+			denied = append(denied, it)
+		}
+	}
+	return &pluginv1.CheckAccessResponse{Denied: denied}, nil
+}
+
+// The Unimplemented servers sit one level deeper so connectFake's methods win.
+type (
+	trackerBase struct {
+		pluginv1.UnimplementedTrackerAdapterServer
+	}
+	codeHostBase struct {
+		pluginv1.UnimplementedCodeHostAdapterServer
+	}
 )
 
 type fakeTracker struct {
-	pluginv1.UnimplementedTrackerAdapterServer
+	trackerBase
+	connectFake
 	mu       sync.Mutex
 	streams  map[chan *pluginv1.TrackerEvent][]string // open streams -> watched project keys
 	comments []string
@@ -77,6 +137,9 @@ func (f *fakeTracker) GetCapabilities(context.Context, *pluginv1.GetCapabilities
 }
 
 func (f *fakeTracker) StreamEvents(req *pluginv1.StreamEventsRequest, s grpc.ServerStreamingServer[pluginv1.TrackerEvent]) error {
+	if !hasCred(req.GetCredential(), trackerCred) {
+		return errNoCredential
+	}
 	events := make(chan *pluginv1.TrackerEvent, 8)
 	f.mu.Lock()
 	f.streams[events] = req.GetProjectKeys()
@@ -95,10 +158,16 @@ func (f *fakeTracker) StreamEvents(req *pluginv1.StreamEventsRequest, s grpc.Ser
 }
 
 func (f *fakeTracker) GetTicket(_ context.Context, r *pluginv1.GetTicketRequest) (*pluginv1.Ticket, error) {
+	if !hasCred(r.GetCredential(), trackerCred) {
+		return nil, errNoCredential
+	}
 	return &pluginv1.Ticket{TicketRef: r.GetTicketRef(), Title: "Titel " + r.GetTicketRef()}, nil
 }
 
 func (f *fakeTracker) PostComment(_ context.Context, r *pluginv1.PostCommentRequest) (*pluginv1.PostCommentResponse, error) {
+	if !hasCred(r.GetCredential(), trackerCred) {
+		return nil, errNoCredential
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.comments = append(f.comments, r.GetTicketRef()+"|"+r.GetBody())
@@ -118,9 +187,17 @@ func (f *fakeTracker) commentsFor(ref string) []string {
 }
 
 type fakeCodeHost struct {
-	pluginv1.UnimplementedCodeHostAdapterServer
+	codeHostBase
+	connectFake
 	mu  sync.Mutex
 	prs []*pluginv1.OpenPullRequestRequest
+}
+
+func (f *fakeCodeHost) IssueRepoCredentials(_ context.Context, r *pluginv1.IssueRepoCredentialsRequest) (*pluginv1.RepoCredentials, error) {
+	if !hasCreds(r.GetCredentials(), codeHostCred) {
+		return nil, errNoCredential
+	}
+	return &pluginv1.RepoCredentials{Username: "x-access-token", Token: repoToken}, nil
 }
 
 func (f *fakeCodeHost) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
@@ -128,6 +205,9 @@ func (f *fakeCodeHost) GetCapabilities(context.Context, *pluginv1.GetCapabilitie
 }
 
 func (f *fakeCodeHost) OpenPullRequest(_ context.Context, r *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error) {
+	if !hasCreds(r.GetCredentials(), codeHostCred) {
+		return nil, errNoCredential
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.prs = append(f.prs, r)
@@ -215,7 +295,27 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(db.Close)
-	svc := admin.NewService(db, map[string]string{"linear": "tracker", "github": "codehost"}, time.Now, uuid.New, log)
+	ft := &fakeTracker{streams: map[chan *pluginv1.TrackerEvent][]string{},
+		connectFake: connectFake{cred: trackerCred, externalID: "ws1", allowed: []string{"ORC", "RES"}}}
+	fc := &fakeCodeHost{connectFake: connectFake{cred: codeHostCred, externalID: "42", allowed: []string{repoSlug}}}
+	lisT := serve(t, func(s *grpc.Server) { pluginv1.RegisterTrackerAdapterServer(s, ft) })
+	lisC := serve(t, func(s *grpc.Server) { pluginv1.RegisterCodeHostAdapterServer(s, fc) })
+	dialer := func(addr string) (*grpc.ClientConn, error) {
+		if addr == "tracker" {
+			return dial(t, lisT), nil
+		}
+		return dial(t, lisC), nil
+	}
+
+	box, err := secretbox.New(secretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connReg := adapters.NewRegistry(nil, log)
+	connReg.SetDialer(dialer)
+	t.Cleanup(connReg.Close)
+	addrs := map[string]string{"linear": "tracker", "github": "codehost"}
+	svc := admin.NewService(db, addrs, box, connReg.Connector(addrs), "http://orchivio.test", time.Now, uuid.New, log)
 	token := "orv_" + strings.ReplaceAll(uuid.NewString(), "-", "") + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if ok, err := svc.Bootstrap(ctx, token); err != nil || !ok {
 		t.Fatalf("bootstrap ok=%v err=%v", ok, err)
@@ -225,22 +325,15 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	svc.OnChange(cfg.Reload)
-	api := httptest.NewServer(httpapi.NewAdmin(svc, log))
+	mux := http.NewServeMux() // as in main.go
+	mux.Handle("/api/v1/", httpapi.NewAdmin(svc, log))
+	mux.Handle("GET /oauth/callback/{adapter}", httpapi.NewCallback(svc, log))
+	api := httptest.NewServer(mux)
 	t.Cleanup(api.Close)
-
-	ft := &fakeTracker{streams: map[chan *pluginv1.TrackerEvent][]string{}}
-	fc := &fakeCodeHost{}
-	lisT := serve(t, func(s *grpc.Server) { pluginv1.RegisterTrackerAdapterServer(s, ft) })
-	lisC := serve(t, func(s *grpc.Server) { pluginv1.RegisterCodeHostAdapterServer(s, fc) })
 
 	reg := adapters.NewRegistry(cfg, log)
 	t.Cleanup(reg.Close)
-	reg.SetDialer(func(addr string) (*grpc.ClientConn, error) {
-		if addr == "tracker" {
-			return dial(t, lisT), nil
-		}
-		return dial(t, lisC), nil
-	})
+	reg.SetDialer(dialer)
 	rep := reporter.New(func(tn string) reporter.TrackerClient { return reg.TrackerFor(tn) }, cfg, publicURL)
 	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
 	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, time.Minute, publicURL)
@@ -299,24 +392,60 @@ func (e *env) mustPost(path string, in, out any) {
 	}
 }
 
-// provision creates tenant acme (once per env), profile default and a project for trackerKey.
-func (e *env) provision(trackerKey string) {
+// connect authorizes tenant acme at adapter through the API and follows the
+// provider's redirect back to the callback page.
+func (e *env) connect(adapter string) {
+	e.t.Helper()
+	var auth struct {
+		URL string `json:"url"`
+	}
+	if code := e.post("/api/v1/tenants/acme/connections/"+adapter+"/authorize", nil, &auth); code != http.StatusOK {
+		e.t.Fatalf("authorize %s = %d", adapter, code)
+	}
+	state, ok := strings.CutPrefix(auth.URL, providerLogin)
+	if !ok {
+		e.t.Fatalf("authorize url = %q", auth.URL)
+	}
+	resp, err := http.Get(e.admin.URL + "/oauth/callback/" + adapter + "?code=granted&state=" + state)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		e.t.Fatalf("callback %s = %d", adapter, resp.StatusCode)
+	}
+}
+
+// createTenant creates tenant acme with profile default and returns the profile id.
+func (e *env) createTenant() string {
 	e.t.Helper()
 	var profile struct {
 		ID string `json:"id"`
 	}
-	slug := "acme"
-	e.mustPost("/api/v1/tenants", map[string]any{"slug": slug, "displayName": "Acme",
+	e.mustPost("/api/v1/tenants", map[string]any{"slug": "acme", "displayName": "Acme",
 		"trackerAdapter": "linear", "codeHostAdapter": "github"}, nil)
-	e.mustPost("/api/v1/tenants/"+slug+"/profiles", map[string]any{"name": "default", "runtime": "claude-code",
+	e.mustPost("/api/v1/tenants/acme/profiles", map[string]any{"name": "default", "runtime": "claude-code",
 		"model": "m", "maxDuration": "20m"}, &profile)
-	e.mustPost("/api/v1/tenants/"+slug+"/projects", map[string]any{
-		"name": "demo", "trackerKey": trackerKey, "profileId": profile.ID,
+	return profile.ID
+}
+
+func projectRequest(trackerKey, profileID string) map[string]any {
+	return map[string]any{
+		"name": "demo", "trackerKey": trackerKey, "profileId": profileID,
 		"repos":        []config.Repo{{Slug: repoSlug, BaseBranch: "main", AllowedPaths: []string{""}}},
 		"classifier":   config.ClassifierRules{TaskLabels: []string{"orchivio:aufgabe"}, QuestionLabels: []string{"orchivio:frage"}, DefaultRepo: repoSlug},
 		"roles":        config.Roles{Questions: []string{userEmail}, Tasks: []string{userEmail}},
 		"maxDiffLines": 500,
-	}, nil)
+	}
+}
+
+// provision creates tenant acme (once per env), connects it to both fakes and creates a project for trackerKey.
+func (e *env) provision(trackerKey string) {
+	e.t.Helper()
+	profileID := e.createTenant()
+	e.connect("linear")
+	e.connect("github")
+	e.mustPost("/api/v1/tenants/acme/projects", projectRequest(trackerKey, profileID), nil)
 }
 
 func (e *env) lease(t *testing.T) *workerv1.RunAssignment {
@@ -377,6 +506,31 @@ func TestServerStartsEmptyAndAcceptsBootstrapToken(t *testing.T) {
 	var got []any
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil || resp.StatusCode != http.StatusOK || len(got) != 0 {
 		t.Fatalf("status=%d tenants=%v err=%v, want 200 []", resp.StatusCode, got, err)
+	}
+}
+
+func TestConnectFlowThenProjectReceivesEvents(t *testing.T) {
+	e := setup(t)
+	profileID := e.createTenant()
+	if code := e.post("/api/v1/tenants/acme/projects", projectRequest("RES", profileID), nil); code != http.StatusUnprocessableEntity {
+		t.Fatalf("project before connecting = %d, want 422", code)
+	}
+	e.connect("linear")
+	e.connect("github")
+	denied := projectRequest("RES", profileID)
+	denied["repos"] = []config.Repo{{Slug: "other/repo", BaseBranch: "main"}}
+	denied["classifier"] = config.ClassifierRules{DefaultRepo: "other/repo"}
+	if code := e.post("/api/v1/tenants/acme/projects", denied, nil); code != http.StatusUnprocessableEntity {
+		t.Fatalf("project with foreign repo = %d, want 422", code)
+	}
+	e.mustPost("/api/v1/tenants/acme/projects", projectRequest("RES", profileID), nil)
+
+	e.sendTo("RES", pluginv1.TrackerEvent_ASSIGNED, "RES-1", "", false)
+	a := e.lease(t)
+	creds, err := e.worker.GetRepoCredentials(context.Background(),
+		&workerv1.GetRepoCredentialsRequest{WorkerId: workerID, RunId: a.GetRunId(), Write: true})
+	if err != nil || creds.GetToken() != repoToken {
+		t.Fatalf("repo credentials = %v, err %v", creds, err)
 	}
 }
 

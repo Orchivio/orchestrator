@@ -116,16 +116,21 @@ func (r *Registry) tenant(name string) (config.Tenant, error) {
 	return t, nil
 }
 
-func (r *Registry) trackerClient(ctx context.Context, tenant string) (pluginv1.TrackerAdapterClient, error) {
+// trackerClient returns the tenant's tracker client and credential; without an
+// active tracker connection the adapter is not called.
+func (r *Registry) trackerClient(ctx context.Context, tenant string) (pluginv1.TrackerAdapterClient, *pluginv1.Credential, error) {
 	t, err := r.tenant(tenant)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if t.TrackerCredential == nil {
+		return nil, nil, fmt.Errorf("tenant %s has no active tracker connection", tenant)
 	}
 	cc, err := r.connFor(ctx, tenant, "tracker", t.Tracker.Address, func(cc *grpc.ClientConn) capsClient { return pluginv1.NewTrackerAdapterClient(cc) })
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return pluginv1.NewTrackerAdapterClient(cc), nil
+	return pluginv1.NewTrackerAdapterClient(cc), &pluginv1.Credential{Data: t.TrackerCredential}, nil
 }
 
 // Tracker returns the router.Tracker over all tenants.
@@ -142,11 +147,11 @@ type Tracker struct{ r *Registry }
 
 // GetTicket fetches a ticket from the tenant's tracker.
 func (t *Tracker) GetTicket(ctx context.Context, tenant, ref string) (*pluginv1.Ticket, error) {
-	c, err := t.r.trackerClient(ctx, tenant)
+	c, cred, err := t.r.trackerClient(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
-	return c.GetTicket(ctx, &pluginv1.GetTicketRequest{TicketRef: ref})
+	return c.GetTicket(ctx, &pluginv1.GetTicketRequest{TicketRef: ref, Credential: cred})
 }
 
 // TenantTracker implements reporter.TrackerClient.
@@ -157,43 +162,54 @@ type TenantTracker struct {
 
 // PostComment comments on a ticket.
 func (t *TenantTracker) PostComment(ctx context.Context, ref, body string) error {
-	c, err := t.r.trackerClient(ctx, t.tenant)
+	c, cred, err := t.r.trackerClient(ctx, t.tenant)
 	if err != nil {
 		return err
 	}
-	_, err = c.PostComment(ctx, &pluginv1.PostCommentRequest{TicketRef: ref, Body: body})
+	_, err = c.PostComment(ctx, &pluginv1.PostCommentRequest{TicketRef: ref, Body: body, Credential: cred})
 	return err
 }
 
 // CodeHost implements orchestrator.CodeHost.
 type CodeHost struct{ r *Registry }
 
-func (h *CodeHost) client(ctx context.Context, tenant string) (pluginv1.CodeHostAdapterClient, error) {
+// client returns the tenant's code host client and all its code host
+// credentials; the adapter picks the one whose installation holds the repo.
+func (h *CodeHost) client(ctx context.Context, tenant string) (pluginv1.CodeHostAdapterClient, []*pluginv1.Credential, error) {
 	t, err := h.r.tenant(tenant)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if len(t.CodeHostCredentials) == 0 {
+		return nil, nil, fmt.Errorf("tenant %s has no active code host connection", tenant)
 	}
 	cc, err := h.r.connFor(ctx, tenant, "codehost", t.CodeHost.Address, func(cc *grpc.ClientConn) capsClient { return pluginv1.NewCodeHostAdapterClient(cc) })
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return pluginv1.NewCodeHostAdapterClient(cc), nil
+	creds := make([]*pluginv1.Credential, len(t.CodeHostCredentials))
+	for i, d := range t.CodeHostCredentials {
+		creds[i] = &pluginv1.Credential{Data: d}
+	}
+	return pluginv1.NewCodeHostAdapterClient(cc), creds, nil
 }
 
 // IssueRepoCredentials asks the code host for short-lived repo credentials.
 func (h *CodeHost) IssueRepoCredentials(ctx context.Context, tenant string, repos []string, write bool) (*pluginv1.RepoCredentials, error) {
-	c, err := h.client(ctx, tenant)
+	c, creds, err := h.client(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
-	return c.IssueRepoCredentials(ctx, &pluginv1.IssueRepoCredentialsRequest{Repos: repos, Write: write})
+	return c.IssueRepoCredentials(ctx, &pluginv1.IssueRepoCredentialsRequest{Repos: repos, Write: write, Credentials: creds})
 }
 
-// OpenPullRequest opens a pull request at the code host.
+// OpenPullRequest opens a pull request at the code host; req gets the
+// tenant's credentials set.
 func (h *CodeHost) OpenPullRequest(ctx context.Context, tenant string, req *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error) {
-	c, err := h.client(ctx, tenant)
+	c, creds, err := h.client(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
+	req.Credentials = creds
 	return c.OpenPullRequest(ctx, req)
 }

@@ -3,10 +3,14 @@ info:
   title: Orchivio Admin API
   version: 1.0.0
   description: >
-    Runtime administration of tenants, profiles, projects and API tokens.
+    Runtime administration of tenants, profiles, projects, connections and API tokens.
     Every single-resource response carries ETag "<version>"; PUT and DELETE
     honour If-Match "<version>" (absent means last writer wins).
     Errors are RFC 9457 problem details.
+    Instance admin tokens may do everything. A tenant admin token sees only its
+    own tenant (any other tenant in the path is 404), manages that tenant's
+    profiles, projects, connections and tenant tokens, may change only the
+    tenant's displayName, and gets 403 for instance-only actions.
 servers:
   - url: /api/v1
 security:
@@ -27,6 +31,7 @@ paths:
         "201": {$ref: "#/components/responses/TenantCreated"}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "422": {$ref: "#/components/responses/Invalid"}
   /tenants/{slug}:
     parameters: [{$ref: "#/components/parameters/Slug"}]
@@ -46,6 +51,7 @@ paths:
         "200": {$ref: "#/components/responses/TenantOK"}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
         "422": {$ref: "#/components/responses/Invalid"}
@@ -56,6 +62,7 @@ paths:
       responses:
         "204": {description: Deleted}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
@@ -157,15 +164,66 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
+  /tenants/{slug}/connections:
+    parameters: [{$ref: "#/components/parameters/Slug"}]
+    get:
+      summary: List connections of a tenant (never includes credentials)
+      operationId: listConnections
+      responses:
+        "200": {description: Connections, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Connection"}}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /tenants/{slug}/connections/{adapter}/authorize:
+    parameters:
+      - {$ref: "#/components/parameters/Slug"}
+      - {name: adapter, in: path, required: true, schema: {type: string}, description: The tenant's trackerAdapter or codeHostAdapter}
+    post:
+      summary: Start connecting the tenant to an adapter
+      description: >
+        Returns the provider URL to open in a browser. The provider redirects to
+        {ORCHIVIO_PUBLIC_URL}/oauth/callback/{adapter}, which stores the
+        connection and shows a plain HTML page; that page needs no token, its
+        single-use state (valid 10 minutes) authorizes it.
+      operationId: authorizeConnection
+      responses:
+        "200":
+          description: Provider URL
+          content:
+            application/json:
+              schema: {type: object, required: [url], properties: {url: {type: string, format: uri}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Invalid"}
+        "502": {$ref: "#/components/responses/AdapterFailed"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /tenants/{slug}/connections/{id}:
+    parameters: [{$ref: "#/components/parameters/Slug"}, {$ref: "#/components/parameters/Id"}]
+    get:
+      summary: Get a connection
+      operationId: getConnection
+      responses:
+        "200": {description: Connection, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+    delete:
+      summary: Disconnect (soft delete; the adapter revokes at the provider on a best-effort basis)
+      operationId: deleteConnection
+      responses:
+        "204": {description: Disconnected}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
   /tokens:
     get:
-      summary: List API tokens (never includes plaintext)
+      summary: List API tokens (never includes plaintext); a tenant admin sees only its tenant's tokens
       operationId: listTokens
       responses:
         "200": {description: Tokens, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Token"}}}}}
         "401": {$ref: "#/components/responses/Unauthorized"}
     post:
-      summary: Issue an instance admin token; the plaintext is shown only in this response
+      summary: Issue an admin token; the plaintext is shown only in this response
       operationId: createToken
       requestBody:
         required: true
@@ -178,15 +236,21 @@ paths:
               properties:
                 name: {type: string}
                 expiresIn: {type: string, examples: ["720h"], description: Go duration; default 90 days}
+                tenant:
+                  type: string
+                  description: >
+                    Tenant slug for a tenant admin token. Omitted by an instance admin: instance token.
+                    A tenant admin may only name its own tenant (omitted means its own).
       responses:
         "201": {description: Token issued, content: {application/json: {schema: {$ref: "#/components/schemas/TokenCreated"}}}}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
         "422": {$ref: "#/components/responses/Invalid"}
   /tokens/{id}:
     parameters: [{$ref: "#/components/parameters/Id"}]
     delete:
-      summary: Revoke a token
+      summary: Revoke a token (a tenant admin only its tenant's tokens; others are 404)
       operationId: revokeToken
       responses:
         "204": {description: Revoked}
@@ -220,9 +284,12 @@ components:
     ProjectCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
     BadRequest: {description: Malformed JSON, unknown field or bad If-Match, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Unauthorized: {description: Missing, invalid, expired or revoked token, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Forbidden: {description: The token may see the resource but not perform this action, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     NotFound: {description: Resource does not exist, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Conflict: {description: Resource still in use, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     PreconditionFailed: {description: If-Match version is stale, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    AdapterFailed: {description: The adapter rejected or failed the request, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    Unavailable: {description: Connections not configured or adapter unreachable, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Invalid: {description: Validation failed, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ValidationProblem"}}}}
   schemas:
     Tenant:
@@ -240,12 +307,12 @@ components:
     TenantUpdate:
       type: object
       additionalProperties: false
-      required: [displayName, trackerAdapter, codeHostAdapter]
+      required: [displayName]
       properties:
         slug: {type: string, description: Optional and ignored; the path wins}
         displayName: {type: string}
-        trackerAdapter: {type: string, description: Immutable}
-        codeHostAdapter: {type: string}
+        trackerAdapter: {type: string, description: "Immutable. Required for instance admins; a tenant admin may omit it (the stored value is kept), another value is 403"}
+        codeHostAdapter: {type: string, description: "Required for instance admins; a tenant admin may omit it (the stored value is kept), another value is 403"}
     Profile:
       type: object
       additionalProperties: false
@@ -299,13 +366,23 @@ components:
         version: {type: integer, format: int64, readOnly: true}
         createdAt: {type: string, format: date-time, readOnly: true}
         updatedAt: {type: string, format: date-time, readOnly: true}
+    Connection:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [tracker, codehost]}
+        adapter: {type: string}
+        label: {type: string, description: Set by the adapter, e.g. workspace name or GitHub login}
+        status: {type: string, enum: [active, needs_reauth]}
+        createdAt: {type: string, format: date-time}
     Token:
       type: object
       properties:
         id: {type: string, format: uuid}
         name: {type: string}
         prefix: {type: string}
-        scope: {type: string, enum: [instance]}
+        scope: {type: string, enum: [instance, tenant]}
+        tenant: {type: string, description: Tenant slug; only for scope tenant}
         role: {type: string, enum: [admin]}
         createdAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}

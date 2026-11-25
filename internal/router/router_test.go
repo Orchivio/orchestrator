@@ -32,11 +32,11 @@ type fakeStore struct {
 	markErr, addErr error
 }
 
-func (s *fakeStore) MarkInbound(_ context.Context, source, id string) (bool, error) {
+func (s *fakeStore) MarkInbound(_ context.Context, tenant, source, id string) (bool, error) {
 	if s.markErr != nil {
 		return false, s.markErr
 	}
-	k := source + "/" + id
+	k := tenant + "/" + source + "/" + id
 	if s.seen[k] {
 		return false, nil
 	}
@@ -521,4 +521,21 @@ func TestHandleMentionWithoutConversationCreatesQueuedQuestion(t *testing.T) {
 	if r := f.s.runs[0]; r.State != StateQueued || r.Kind != classifier.KindQuestion || r.Branch != "" {
 		t.Fatalf("run = %+v", r)
 	}
+}
+
+func TestHandleDedupsInboundPerTenant(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	handle(t, f, assigned("e1", actor))
+	handle(t, f, assigned("e1", actor))
+
+	if len(f.s.seen) != 1 || !f.s.seen["acme/"+f.s.firstSource()+"/e1"] {
+		t.Fatalf("seen = %v", f.s.seen)
+	}
+}
+
+func (s *fakeStore) firstSource() string {
+	for k := range s.seen {
+		return strings.Split(k, "/")[1]
+	}
+	return ""
 }
