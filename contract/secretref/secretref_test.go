@@ -2,6 +2,7 @@ package secretref
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,28 @@ func TestResolveErrorsNeverEchoRawValue(t *testing.T) {
 		if !errors.Is(err, tc.target) || err.Error() != tc.want {
 			t.Errorf("Resolve(%q) err = %v, want %q", tc.ref, err, tc.want)
 		}
+	}
+}
+
+func TestResolveFileTrimsTrailingNewline(t *testing.T) {
+	p := Env{ReadFile: func(string) ([]byte, error) { return []byte("abc\r\n"), nil }}
+	got, err := p.Resolve("file:///run/secrets/x")
+	if err != nil || got != "abc" {
+		t.Errorf("Resolve() = %q, %v", got, err)
+	}
+}
+
+func TestResolveFileRejectsRelativePath(t *testing.T) {
+	p := Env{ReadFile: func(string) ([]byte, error) { return []byte("abc"), nil }}
+	if _, err := p.Resolve("file://rel/x"); err == nil {
+		t.Error("expected error")
+	}
+}
+
+func TestResolveFileErrorHidesContent(t *testing.T) {
+	p := Env{ReadFile: func(string) ([]byte, error) { return []byte("topsecret"), errors.New("boom") }}
+	_, err := p.Resolve("file:///run/secrets/x")
+	if err == nil || !strings.Contains(err.Error(), "/run/secrets/x") || strings.Contains(err.Error(), "topsecret") {
+		t.Errorf("err = %v", err)
 	}
 }

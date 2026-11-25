@@ -11,11 +11,17 @@ service CodeHostAdapter {
   rpc GetCapabilities(GetCapabilitiesRequest) returns (Capabilities);
   rpc IssueRepoCredentials(IssueRepoCredentialsRequest) returns (RepoCredentials);
   rpc OpenPullRequest(OpenPullRequestRequest) returns (PullRequest);
+  rpc BeginConnect(BeginConnectRequest) returns (BeginConnectResponse);
+  rpc CompleteConnect(CompleteConnectRequest) returns (CompleteConnectResponse);
+  rpc RefreshCredential(RefreshCredentialRequest) returns (Credential);
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+  rpc CheckAccess(CheckAccessRequest) returns (CheckAccessResponse);
 }
 
 message IssueRepoCredentialsRequest {
   repeated string repos = 1; // "owner/name"
   bool write = 2;
+  repeated Credential credentials = 3;
 }
 
 message RepoCredentials {
@@ -31,6 +37,7 @@ message OpenPullRequestRequest {
   string head = 3;
   string title = 4;
   string body = 5;
+  repeated Credential credentials = 6;
 }
 
 message PullRequest {

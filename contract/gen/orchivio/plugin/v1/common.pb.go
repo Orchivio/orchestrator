@@ -9,6 +9,7 @@ package pluginv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -209,11 +210,500 @@ func (x *Actor) GetName() string {
 	return ""
 }
 
+// Credential is an opaque per-tenant access record; only the adapter interprets data.
+type Credential struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	RefreshAfter  *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=refresh_after,json=refreshAfter,proto3" json:"refresh_after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Credential) Reset() {
+	*x = Credential{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Credential) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Credential) ProtoMessage() {}
+
+func (x *Credential) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Credential.ProtoReflect.Descriptor instead.
+func (*Credential) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Credential) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *Credential) GetRefreshAfter() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RefreshAfter
+	}
+	return nil
+}
+
+type BeginConnectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tenant        string                 `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	RedirectUri   string                 `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
+	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginConnectRequest) Reset() {
+	*x = BeginConnectRequest{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginConnectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginConnectRequest) ProtoMessage() {}
+
+func (x *BeginConnectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginConnectRequest.ProtoReflect.Descriptor instead.
+func (*BeginConnectRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *BeginConnectRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *BeginConnectRequest) GetRedirectUri() string {
+	if x != nil {
+		return x.RedirectUri
+	}
+	return ""
+}
+
+func (x *BeginConnectRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+type BeginConnectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginConnectResponse) Reset() {
+	*x = BeginConnectResponse{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginConnectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginConnectResponse) ProtoMessage() {}
+
+func (x *BeginConnectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginConnectResponse.ProtoReflect.Descriptor instead.
+func (*BeginConnectResponse) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *BeginConnectResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type CompleteConnectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RedirectUri   string                 `protobuf:"bytes,1,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
+	Query         map[string]string      `protobuf:"bytes,2,rep,name=query,proto3" json:"query,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteConnectRequest) Reset() {
+	*x = CompleteConnectRequest{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteConnectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteConnectRequest) ProtoMessage() {}
+
+func (x *CompleteConnectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteConnectRequest.ProtoReflect.Descriptor instead.
+func (*CompleteConnectRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CompleteConnectRequest) GetRedirectUri() string {
+	if x != nil {
+		return x.RedirectUri
+	}
+	return ""
+}
+
+func (x *CompleteConnectRequest) GetQuery() map[string]string {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+type CompleteConnectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credential    *Credential            `protobuf:"bytes,1,opt,name=credential,proto3" json:"credential,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	ExternalId    string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId,proto3" json:"external_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteConnectResponse) Reset() {
+	*x = CompleteConnectResponse{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteConnectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteConnectResponse) ProtoMessage() {}
+
+func (x *CompleteConnectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteConnectResponse.ProtoReflect.Descriptor instead.
+func (*CompleteConnectResponse) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CompleteConnectResponse) GetCredential() *Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
+}
+
+func (x *CompleteConnectResponse) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *CompleteConnectResponse) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+type RefreshCredentialRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credential    *Credential            `protobuf:"bytes,1,opt,name=credential,proto3" json:"credential,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshCredentialRequest) Reset() {
+	*x = RefreshCredentialRequest{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshCredentialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshCredentialRequest) ProtoMessage() {}
+
+func (x *RefreshCredentialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshCredentialRequest.ProtoReflect.Descriptor instead.
+func (*RefreshCredentialRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RefreshCredentialRequest) GetCredential() *Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
+}
+
+type DisconnectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credential    *Credential            `protobuf:"bytes,1,opt,name=credential,proto3" json:"credential,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisconnectRequest) Reset() {
+	*x = DisconnectRequest{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectRequest) ProtoMessage() {}
+
+func (x *DisconnectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectRequest.ProtoReflect.Descriptor instead.
+func (*DisconnectRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DisconnectRequest) GetCredential() *Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
+}
+
+type DisconnectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisconnectResponse) Reset() {
+	*x = DisconnectResponse{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectResponse) ProtoMessage() {}
+
+func (x *DisconnectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectResponse.ProtoReflect.Descriptor instead.
+func (*DisconnectResponse) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{10}
+}
+
+type CheckAccessRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   []*Credential          `protobuf:"bytes,1,rep,name=credentials,proto3" json:"credentials,omitempty"`
+	Items         []string               `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"` // tracker: team keys; codehost: "owner/name"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckAccessRequest) Reset() {
+	*x = CheckAccessRequest{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckAccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckAccessRequest) ProtoMessage() {}
+
+func (x *CheckAccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckAccessRequest.ProtoReflect.Descriptor instead.
+func (*CheckAccessRequest) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CheckAccessRequest) GetCredentials() []*Credential {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+func (x *CheckAccessRequest) GetItems() []string {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type CheckAccessResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Denied        []string               `protobuf:"bytes,1,rep,name=denied,proto3" json:"denied,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckAccessResponse) Reset() {
+	*x = CheckAccessResponse{}
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckAccessResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckAccessResponse) ProtoMessage() {}
+
+func (x *CheckAccessResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchivio_plugin_v1_common_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckAccessResponse.ProtoReflect.Descriptor instead.
+func (*CheckAccessResponse) Descriptor() ([]byte, []int) {
+	return file_orchivio_plugin_v1_common_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CheckAccessResponse) GetDenied() []string {
+	if x != nil {
+		return x.Denied
+	}
+	return nil
+}
+
 var File_orchivio_plugin_v1_common_proto protoreflect.FileDescriptor
 
 const file_orchivio_plugin_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x1forchivio/plugin/v1/common.proto\x12\x12orchivio.plugin.v1\"\xda\x02\n" +
+	"\x1forchivio/plugin/v1/common.proto\x12\x12orchivio.plugin.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xda\x02\n" +
 	"\fCapabilities\x12)\n" +
 	"\x10contract_version\x18\x01 \x01(\tR\x0fcontractVersion\x12!\n" +
 	"\fadapter_name\x18\x02 \x01(\tR\vadapterName\x12)\n" +
@@ -226,7 +716,45 @@ const file_orchivio_plugin_v1_common_proto_rawDesc = "" +
 	"\x05Actor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04nameBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\x04name\x18\x03 \x01(\tR\x04name\"a\n" +
+	"\n" +
+	"Credential\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12?\n" +
+	"\rrefresh_after\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\frefreshAfter\"f\n" +
+	"\x13BeginConnectRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12!\n" +
+	"\fredirect_uri\x18\x02 \x01(\tR\vredirectUri\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\"(\n" +
+	"\x14BeginConnectResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\"\xc2\x01\n" +
+	"\x16CompleteConnectRequest\x12!\n" +
+	"\fredirect_uri\x18\x01 \x01(\tR\vredirectUri\x12K\n" +
+	"\x05query\x18\x02 \x03(\v25.orchivio.plugin.v1.CompleteConnectRequest.QueryEntryR\x05query\x1a8\n" +
+	"\n" +
+	"QueryEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x01\n" +
+	"\x17CompleteConnectResponse\x12>\n" +
+	"\n" +
+	"credential\x18\x01 \x01(\v2\x1e.orchivio.plugin.v1.CredentialR\n" +
+	"credential\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1f\n" +
+	"\vexternal_id\x18\x03 \x01(\tR\n" +
+	"externalId\"Z\n" +
+	"\x18RefreshCredentialRequest\x12>\n" +
+	"\n" +
+	"credential\x18\x01 \x01(\v2\x1e.orchivio.plugin.v1.CredentialR\n" +
+	"credential\"S\n" +
+	"\x11DisconnectRequest\x12>\n" +
+	"\n" +
+	"credential\x18\x01 \x01(\v2\x1e.orchivio.plugin.v1.CredentialR\n" +
+	"credential\"\x14\n" +
+	"\x12DisconnectResponse\"l\n" +
+	"\x12CheckAccessRequest\x12@\n" +
+	"\vcredentials\x18\x01 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\x12\x14\n" +
+	"\x05items\x18\x02 \x03(\tR\x05items\"-\n" +
+	"\x13CheckAccessResponse\x12\x16\n" +
+	"\x06denied\x18\x01 \x03(\tR\x06deniedBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_common_proto_rawDescOnce sync.Once
@@ -240,18 +768,36 @@ func file_orchivio_plugin_v1_common_proto_rawDescGZIP() []byte {
 	return file_orchivio_plugin_v1_common_proto_rawDescData
 }
 
-var file_orchivio_plugin_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_orchivio_plugin_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_orchivio_plugin_v1_common_proto_goTypes = []any{
-	(*Capabilities)(nil),           // 0: orchivio.plugin.v1.Capabilities
-	(*GetCapabilitiesRequest)(nil), // 1: orchivio.plugin.v1.GetCapabilitiesRequest
-	(*Actor)(nil),                  // 2: orchivio.plugin.v1.Actor
+	(*Capabilities)(nil),             // 0: orchivio.plugin.v1.Capabilities
+	(*GetCapabilitiesRequest)(nil),   // 1: orchivio.plugin.v1.GetCapabilitiesRequest
+	(*Actor)(nil),                    // 2: orchivio.plugin.v1.Actor
+	(*Credential)(nil),               // 3: orchivio.plugin.v1.Credential
+	(*BeginConnectRequest)(nil),      // 4: orchivio.plugin.v1.BeginConnectRequest
+	(*BeginConnectResponse)(nil),     // 5: orchivio.plugin.v1.BeginConnectResponse
+	(*CompleteConnectRequest)(nil),   // 6: orchivio.plugin.v1.CompleteConnectRequest
+	(*CompleteConnectResponse)(nil),  // 7: orchivio.plugin.v1.CompleteConnectResponse
+	(*RefreshCredentialRequest)(nil), // 8: orchivio.plugin.v1.RefreshCredentialRequest
+	(*DisconnectRequest)(nil),        // 9: orchivio.plugin.v1.DisconnectRequest
+	(*DisconnectResponse)(nil),       // 10: orchivio.plugin.v1.DisconnectResponse
+	(*CheckAccessRequest)(nil),       // 11: orchivio.plugin.v1.CheckAccessRequest
+	(*CheckAccessResponse)(nil),      // 12: orchivio.plugin.v1.CheckAccessResponse
+	nil,                              // 13: orchivio.plugin.v1.CompleteConnectRequest.QueryEntry
+	(*timestamppb.Timestamp)(nil),    // 14: google.protobuf.Timestamp
 }
 var file_orchivio_plugin_v1_common_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	14, // 0: orchivio.plugin.v1.Credential.refresh_after:type_name -> google.protobuf.Timestamp
+	13, // 1: orchivio.plugin.v1.CompleteConnectRequest.query:type_name -> orchivio.plugin.v1.CompleteConnectRequest.QueryEntry
+	3,  // 2: orchivio.plugin.v1.CompleteConnectResponse.credential:type_name -> orchivio.plugin.v1.Credential
+	3,  // 3: orchivio.plugin.v1.RefreshCredentialRequest.credential:type_name -> orchivio.plugin.v1.Credential
+	3,  // 4: orchivio.plugin.v1.DisconnectRequest.credential:type_name -> orchivio.plugin.v1.Credential
+	3,  // 5: orchivio.plugin.v1.CheckAccessRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	6,  // [6:6] is the sub-list for method output_type
+	6,  // [6:6] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_orchivio_plugin_v1_common_proto_init() }
@@ -265,7 +811,7 @@ func file_orchivio_plugin_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchivio_plugin_v1_common_proto_rawDesc), len(file_orchivio_plugin_v1_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

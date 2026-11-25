@@ -22,6 +22,11 @@ const (
 	CodeHostAdapter_GetCapabilities_FullMethodName      = "/orchivio.plugin.v1.CodeHostAdapter/GetCapabilities"
 	CodeHostAdapter_IssueRepoCredentials_FullMethodName = "/orchivio.plugin.v1.CodeHostAdapter/IssueRepoCredentials"
 	CodeHostAdapter_OpenPullRequest_FullMethodName      = "/orchivio.plugin.v1.CodeHostAdapter/OpenPullRequest"
+	CodeHostAdapter_BeginConnect_FullMethodName         = "/orchivio.plugin.v1.CodeHostAdapter/BeginConnect"
+	CodeHostAdapter_CompleteConnect_FullMethodName      = "/orchivio.plugin.v1.CodeHostAdapter/CompleteConnect"
+	CodeHostAdapter_RefreshCredential_FullMethodName    = "/orchivio.plugin.v1.CodeHostAdapter/RefreshCredential"
+	CodeHostAdapter_Disconnect_FullMethodName           = "/orchivio.plugin.v1.CodeHostAdapter/Disconnect"
+	CodeHostAdapter_CheckAccess_FullMethodName          = "/orchivio.plugin.v1.CodeHostAdapter/CheckAccess"
 )
 
 // CodeHostAdapterClient is the client API for CodeHostAdapter service.
@@ -31,6 +36,11 @@ type CodeHostAdapterClient interface {
 	GetCapabilities(ctx context.Context, in *GetCapabilitiesRequest, opts ...grpc.CallOption) (*Capabilities, error)
 	IssueRepoCredentials(ctx context.Context, in *IssueRepoCredentialsRequest, opts ...grpc.CallOption) (*RepoCredentials, error)
 	OpenPullRequest(ctx context.Context, in *OpenPullRequestRequest, opts ...grpc.CallOption) (*PullRequest, error)
+	BeginConnect(ctx context.Context, in *BeginConnectRequest, opts ...grpc.CallOption) (*BeginConnectResponse, error)
+	CompleteConnect(ctx context.Context, in *CompleteConnectRequest, opts ...grpc.CallOption) (*CompleteConnectResponse, error)
+	RefreshCredential(ctx context.Context, in *RefreshCredentialRequest, opts ...grpc.CallOption) (*Credential, error)
+	Disconnect(ctx context.Context, in *DisconnectRequest, opts ...grpc.CallOption) (*DisconnectResponse, error)
+	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
 }
 
 type codeHostAdapterClient struct {
@@ -71,6 +81,56 @@ func (c *codeHostAdapterClient) OpenPullRequest(ctx context.Context, in *OpenPul
 	return out, nil
 }
 
+func (c *codeHostAdapterClient) BeginConnect(ctx context.Context, in *BeginConnectRequest, opts ...grpc.CallOption) (*BeginConnectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginConnectResponse)
+	err := c.cc.Invoke(ctx, CodeHostAdapter_BeginConnect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *codeHostAdapterClient) CompleteConnect(ctx context.Context, in *CompleteConnectRequest, opts ...grpc.CallOption) (*CompleteConnectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteConnectResponse)
+	err := c.cc.Invoke(ctx, CodeHostAdapter_CompleteConnect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *codeHostAdapterClient) RefreshCredential(ctx context.Context, in *RefreshCredentialRequest, opts ...grpc.CallOption) (*Credential, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Credential)
+	err := c.cc.Invoke(ctx, CodeHostAdapter_RefreshCredential_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *codeHostAdapterClient) Disconnect(ctx context.Context, in *DisconnectRequest, opts ...grpc.CallOption) (*DisconnectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DisconnectResponse)
+	err := c.cc.Invoke(ctx, CodeHostAdapter_Disconnect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *codeHostAdapterClient) CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckAccessResponse)
+	err := c.cc.Invoke(ctx, CodeHostAdapter_CheckAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CodeHostAdapterServer is the server API for CodeHostAdapter service.
 // All implementations must embed UnimplementedCodeHostAdapterServer
 // for forward compatibility.
@@ -78,6 +138,11 @@ type CodeHostAdapterServer interface {
 	GetCapabilities(context.Context, *GetCapabilitiesRequest) (*Capabilities, error)
 	IssueRepoCredentials(context.Context, *IssueRepoCredentialsRequest) (*RepoCredentials, error)
 	OpenPullRequest(context.Context, *OpenPullRequestRequest) (*PullRequest, error)
+	BeginConnect(context.Context, *BeginConnectRequest) (*BeginConnectResponse, error)
+	CompleteConnect(context.Context, *CompleteConnectRequest) (*CompleteConnectResponse, error)
+	RefreshCredential(context.Context, *RefreshCredentialRequest) (*Credential, error)
+	Disconnect(context.Context, *DisconnectRequest) (*DisconnectResponse, error)
+	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
 	mustEmbedUnimplementedCodeHostAdapterServer()
 }
 
@@ -96,6 +161,21 @@ func (UnimplementedCodeHostAdapterServer) IssueRepoCredentials(context.Context, 
 }
 func (UnimplementedCodeHostAdapterServer) OpenPullRequest(context.Context, *OpenPullRequestRequest) (*PullRequest, error) {
 	return nil, status.Error(codes.Unimplemented, "method OpenPullRequest not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) BeginConnect(context.Context, *BeginConnectRequest) (*BeginConnectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginConnect not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) CompleteConnect(context.Context, *CompleteConnectRequest) (*CompleteConnectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteConnect not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) RefreshCredential(context.Context, *RefreshCredentialRequest) (*Credential, error) {
+	return nil, status.Error(codes.Unimplemented, "method RefreshCredential not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) Disconnect(context.Context, *DisconnectRequest) (*DisconnectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Disconnect not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAccess not implemented")
 }
 func (UnimplementedCodeHostAdapterServer) mustEmbedUnimplementedCodeHostAdapterServer() {}
 func (UnimplementedCodeHostAdapterServer) testEmbeddedByValue()                         {}
@@ -172,6 +252,96 @@ func _CodeHostAdapter_OpenPullRequest_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CodeHostAdapter_BeginConnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginConnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodeHostAdapterServer).BeginConnect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodeHostAdapter_BeginConnect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodeHostAdapterServer).BeginConnect(ctx, req.(*BeginConnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CodeHostAdapter_CompleteConnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteConnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodeHostAdapterServer).CompleteConnect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodeHostAdapter_CompleteConnect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodeHostAdapterServer).CompleteConnect(ctx, req.(*CompleteConnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CodeHostAdapter_RefreshCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshCredentialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodeHostAdapterServer).RefreshCredential(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodeHostAdapter_RefreshCredential_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodeHostAdapterServer).RefreshCredential(ctx, req.(*RefreshCredentialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CodeHostAdapter_Disconnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisconnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodeHostAdapterServer).Disconnect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodeHostAdapter_Disconnect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodeHostAdapterServer).Disconnect(ctx, req.(*DisconnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CodeHostAdapter_CheckAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodeHostAdapterServer).CheckAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodeHostAdapter_CheckAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodeHostAdapterServer).CheckAccess(ctx, req.(*CheckAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CodeHostAdapter_ServiceDesc is the grpc.ServiceDesc for CodeHostAdapter service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +360,26 @@ var CodeHostAdapter_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "OpenPullRequest",
 			Handler:    _CodeHostAdapter_OpenPullRequest_Handler,
+		},
+		{
+			MethodName: "BeginConnect",
+			Handler:    _CodeHostAdapter_BeginConnect_Handler,
+		},
+		{
+			MethodName: "CompleteConnect",
+			Handler:    _CodeHostAdapter_CompleteConnect_Handler,
+		},
+		{
+			MethodName: "RefreshCredential",
+			Handler:    _CodeHostAdapter_RefreshCredential_Handler,
+		},
+		{
+			MethodName: "Disconnect",
+			Handler:    _CodeHostAdapter_Disconnect_Handler,
+		},
+		{
+			MethodName: "CheckAccess",
+			Handler:    _CodeHostAdapter_CheckAccess_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

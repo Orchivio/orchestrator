@@ -73,6 +73,7 @@ func (TrackerEvent_Kind) EnumDescriptor() ([]byte, []int) {
 type StreamEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectKeys   []string               `protobuf:"bytes,1,rep,name=project_keys,json=projectKeys,proto3" json:"project_keys,omitempty"` // tracker keys (Linear team keys) to watch; empty = invalid
+	Credential    *Credential            `protobuf:"bytes,2,opt,name=credential,proto3" json:"credential,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,6 +111,13 @@ func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
 func (x *StreamEventsRequest) GetProjectKeys() []string {
 	if x != nil {
 		return x.ProjectKeys
+	}
+	return nil
+}
+
+func (x *StreamEventsRequest) GetCredential() *Credential {
+	if x != nil {
+		return x.Credential
 	}
 	return nil
 }
@@ -209,6 +217,7 @@ func (x *TrackerEvent) GetMentionsBot() bool {
 type GetTicketRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TicketRef     string                 `protobuf:"bytes,1,opt,name=ticket_ref,json=ticketRef,proto3" json:"ticket_ref,omitempty"`
+	Credential    *Credential            `protobuf:"bytes,2,opt,name=credential,proto3" json:"credential,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +257,13 @@ func (x *GetTicketRequest) GetTicketRef() string {
 		return x.TicketRef
 	}
 	return ""
+}
+
+func (x *GetTicketRequest) GetCredential() *Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
 }
 
 type Ticket struct {
@@ -338,6 +354,7 @@ type PostCommentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TicketRef     string                 `protobuf:"bytes,1,opt,name=ticket_ref,json=ticketRef,proto3" json:"ticket_ref,omitempty"`
 	Body          string                 `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
+	Credential    *Credential            `protobuf:"bytes,3,opt,name=credential,proto3" json:"credential,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -384,6 +401,13 @@ func (x *PostCommentRequest) GetBody() string {
 		return x.Body
 	}
 	return ""
+}
+
+func (x *PostCommentRequest) GetCredential() *Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
 }
 
 type PostCommentResponse struct {
@@ -434,9 +458,12 @@ var File_orchivio_plugin_v1_tracker_proto protoreflect.FileDescriptor
 
 const file_orchivio_plugin_v1_tracker_proto_rawDesc = "" +
 	"\n" +
-	" orchivio/plugin/v1/tracker.proto\x12\x12orchivio.plugin.v1\x1a\x1forchivio/plugin/v1/common.proto\"8\n" +
+	" orchivio/plugin/v1/tracker.proto\x12\x12orchivio.plugin.v1\x1a\x1forchivio/plugin/v1/common.proto\"x\n" +
 	"\x13StreamEventsRequest\x12!\n" +
-	"\fproject_keys\x18\x01 \x03(\tR\vprojectKeys\"\xcd\x02\n" +
+	"\fproject_keys\x18\x01 \x03(\tR\vprojectKeys\x12>\n" +
+	"\n" +
+	"credential\x18\x02 \x01(\v2\x1e.orchivio.plugin.v1.CredentialR\n" +
+	"credential\"\xcd\x02\n" +
 	"\fTrackerEvent\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
 	"externalId\x129\n" +
@@ -451,10 +478,13 @@ const file_orchivio_plugin_v1_tracker_proto_rawDesc = "" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bASSIGNED\x10\x01\x12\r\n" +
-	"\tCOMMENTED\x10\x02\"1\n" +
+	"\tCOMMENTED\x10\x02\"q\n" +
 	"\x10GetTicketRequest\x12\x1d\n" +
 	"\n" +
-	"ticket_ref\x18\x01 \x01(\tR\tticketRef\"\x84\x02\n" +
+	"ticket_ref\x18\x01 \x01(\tR\tticketRef\x12>\n" +
+	"\n" +
+	"credential\x18\x02 \x01(\v2\x1e.orchivio.plugin.v1.CredentialR\n" +
+	"credential\"\x84\x02\n" +
 	"\x06Ticket\x12\x1d\n" +
 	"\n" +
 	"ticket_ref\x18\x01 \x01(\tR\tticketRef\x12\x14\n" +
@@ -465,19 +495,28 @@ const file_orchivio_plugin_v1_tracker_proto_rawDesc = "" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x1a9\n" +
 	"\vFieldsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"G\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x87\x01\n" +
 	"\x12PostCommentRequest\x12\x1d\n" +
 	"\n" +
 	"ticket_ref\x18\x01 \x01(\tR\tticketRef\x12\x12\n" +
-	"\x04body\x18\x02 \x01(\tR\x04body\"4\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\x12>\n" +
+	"\n" +
+	"credential\x18\x03 \x01(\v2\x1e.orchivio.plugin.v1.CredentialR\n" +
+	"credential\"4\n" +
 	"\x13PostCommentResponse\x12\x1d\n" +
 	"\n" +
-	"comment_id\x18\x01 \x01(\tR\tcommentId2\xfd\x02\n" +
+	"comment_id\x18\x01 \x01(\tR\tcommentId2\xec\x06\n" +
 	"\x0eTrackerAdapter\x12_\n" +
 	"\x0fGetCapabilities\x12*.orchivio.plugin.v1.GetCapabilitiesRequest\x1a .orchivio.plugin.v1.Capabilities\x12[\n" +
 	"\fStreamEvents\x12'.orchivio.plugin.v1.StreamEventsRequest\x1a .orchivio.plugin.v1.TrackerEvent0\x01\x12M\n" +
 	"\tGetTicket\x12$.orchivio.plugin.v1.GetTicketRequest\x1a\x1a.orchivio.plugin.v1.Ticket\x12^\n" +
-	"\vPostComment\x12&.orchivio.plugin.v1.PostCommentRequest\x1a'.orchivio.plugin.v1.PostCommentResponseBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\vPostComment\x12&.orchivio.plugin.v1.PostCommentRequest\x1a'.orchivio.plugin.v1.PostCommentResponse\x12a\n" +
+	"\fBeginConnect\x12'.orchivio.plugin.v1.BeginConnectRequest\x1a(.orchivio.plugin.v1.BeginConnectResponse\x12j\n" +
+	"\x0fCompleteConnect\x12*.orchivio.plugin.v1.CompleteConnectRequest\x1a+.orchivio.plugin.v1.CompleteConnectResponse\x12a\n" +
+	"\x11RefreshCredential\x12,.orchivio.plugin.v1.RefreshCredentialRequest\x1a\x1e.orchivio.plugin.v1.Credential\x12[\n" +
+	"\n" +
+	"Disconnect\x12%.orchivio.plugin.v1.DisconnectRequest\x1a&.orchivio.plugin.v1.DisconnectResponse\x12^\n" +
+	"\vCheckAccess\x12&.orchivio.plugin.v1.CheckAccessRequest\x1a'.orchivio.plugin.v1.CheckAccessResponseBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_tracker_proto_rawDescOnce sync.Once
@@ -494,35 +533,58 @@ func file_orchivio_plugin_v1_tracker_proto_rawDescGZIP() []byte {
 var file_orchivio_plugin_v1_tracker_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_orchivio_plugin_v1_tracker_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_orchivio_plugin_v1_tracker_proto_goTypes = []any{
-	(TrackerEvent_Kind)(0),         // 0: orchivio.plugin.v1.TrackerEvent.Kind
-	(*StreamEventsRequest)(nil),    // 1: orchivio.plugin.v1.StreamEventsRequest
-	(*TrackerEvent)(nil),           // 2: orchivio.plugin.v1.TrackerEvent
-	(*GetTicketRequest)(nil),       // 3: orchivio.plugin.v1.GetTicketRequest
-	(*Ticket)(nil),                 // 4: orchivio.plugin.v1.Ticket
-	(*PostCommentRequest)(nil),     // 5: orchivio.plugin.v1.PostCommentRequest
-	(*PostCommentResponse)(nil),    // 6: orchivio.plugin.v1.PostCommentResponse
-	nil,                            // 7: orchivio.plugin.v1.Ticket.FieldsEntry
-	(*Actor)(nil),                  // 8: orchivio.plugin.v1.Actor
-	(*GetCapabilitiesRequest)(nil), // 9: orchivio.plugin.v1.GetCapabilitiesRequest
-	(*Capabilities)(nil),           // 10: orchivio.plugin.v1.Capabilities
+	(TrackerEvent_Kind)(0),           // 0: orchivio.plugin.v1.TrackerEvent.Kind
+	(*StreamEventsRequest)(nil),      // 1: orchivio.plugin.v1.StreamEventsRequest
+	(*TrackerEvent)(nil),             // 2: orchivio.plugin.v1.TrackerEvent
+	(*GetTicketRequest)(nil),         // 3: orchivio.plugin.v1.GetTicketRequest
+	(*Ticket)(nil),                   // 4: orchivio.plugin.v1.Ticket
+	(*PostCommentRequest)(nil),       // 5: orchivio.plugin.v1.PostCommentRequest
+	(*PostCommentResponse)(nil),      // 6: orchivio.plugin.v1.PostCommentResponse
+	nil,                              // 7: orchivio.plugin.v1.Ticket.FieldsEntry
+	(*Credential)(nil),               // 8: orchivio.plugin.v1.Credential
+	(*Actor)(nil),                    // 9: orchivio.plugin.v1.Actor
+	(*GetCapabilitiesRequest)(nil),   // 10: orchivio.plugin.v1.GetCapabilitiesRequest
+	(*BeginConnectRequest)(nil),      // 11: orchivio.plugin.v1.BeginConnectRequest
+	(*CompleteConnectRequest)(nil),   // 12: orchivio.plugin.v1.CompleteConnectRequest
+	(*RefreshCredentialRequest)(nil), // 13: orchivio.plugin.v1.RefreshCredentialRequest
+	(*DisconnectRequest)(nil),        // 14: orchivio.plugin.v1.DisconnectRequest
+	(*CheckAccessRequest)(nil),       // 15: orchivio.plugin.v1.CheckAccessRequest
+	(*Capabilities)(nil),             // 16: orchivio.plugin.v1.Capabilities
+	(*BeginConnectResponse)(nil),     // 17: orchivio.plugin.v1.BeginConnectResponse
+	(*CompleteConnectResponse)(nil),  // 18: orchivio.plugin.v1.CompleteConnectResponse
+	(*DisconnectResponse)(nil),       // 19: orchivio.plugin.v1.DisconnectResponse
+	(*CheckAccessResponse)(nil),      // 20: orchivio.plugin.v1.CheckAccessResponse
 }
 var file_orchivio_plugin_v1_tracker_proto_depIdxs = []int32{
-	0,  // 0: orchivio.plugin.v1.TrackerEvent.kind:type_name -> orchivio.plugin.v1.TrackerEvent.Kind
-	8,  // 1: orchivio.plugin.v1.TrackerEvent.actor:type_name -> orchivio.plugin.v1.Actor
-	7,  // 2: orchivio.plugin.v1.Ticket.fields:type_name -> orchivio.plugin.v1.Ticket.FieldsEntry
-	9,  // 3: orchivio.plugin.v1.TrackerAdapter.GetCapabilities:input_type -> orchivio.plugin.v1.GetCapabilitiesRequest
-	1,  // 4: orchivio.plugin.v1.TrackerAdapter.StreamEvents:input_type -> orchivio.plugin.v1.StreamEventsRequest
-	3,  // 5: orchivio.plugin.v1.TrackerAdapter.GetTicket:input_type -> orchivio.plugin.v1.GetTicketRequest
-	5,  // 6: orchivio.plugin.v1.TrackerAdapter.PostComment:input_type -> orchivio.plugin.v1.PostCommentRequest
-	10, // 7: orchivio.plugin.v1.TrackerAdapter.GetCapabilities:output_type -> orchivio.plugin.v1.Capabilities
-	2,  // 8: orchivio.plugin.v1.TrackerAdapter.StreamEvents:output_type -> orchivio.plugin.v1.TrackerEvent
-	4,  // 9: orchivio.plugin.v1.TrackerAdapter.GetTicket:output_type -> orchivio.plugin.v1.Ticket
-	6,  // 10: orchivio.plugin.v1.TrackerAdapter.PostComment:output_type -> orchivio.plugin.v1.PostCommentResponse
-	7,  // [7:11] is the sub-list for method output_type
-	3,  // [3:7] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	8,  // 0: orchivio.plugin.v1.StreamEventsRequest.credential:type_name -> orchivio.plugin.v1.Credential
+	0,  // 1: orchivio.plugin.v1.TrackerEvent.kind:type_name -> orchivio.plugin.v1.TrackerEvent.Kind
+	9,  // 2: orchivio.plugin.v1.TrackerEvent.actor:type_name -> orchivio.plugin.v1.Actor
+	8,  // 3: orchivio.plugin.v1.GetTicketRequest.credential:type_name -> orchivio.plugin.v1.Credential
+	7,  // 4: orchivio.plugin.v1.Ticket.fields:type_name -> orchivio.plugin.v1.Ticket.FieldsEntry
+	8,  // 5: orchivio.plugin.v1.PostCommentRequest.credential:type_name -> orchivio.plugin.v1.Credential
+	10, // 6: orchivio.plugin.v1.TrackerAdapter.GetCapabilities:input_type -> orchivio.plugin.v1.GetCapabilitiesRequest
+	1,  // 7: orchivio.plugin.v1.TrackerAdapter.StreamEvents:input_type -> orchivio.plugin.v1.StreamEventsRequest
+	3,  // 8: orchivio.plugin.v1.TrackerAdapter.GetTicket:input_type -> orchivio.plugin.v1.GetTicketRequest
+	5,  // 9: orchivio.plugin.v1.TrackerAdapter.PostComment:input_type -> orchivio.plugin.v1.PostCommentRequest
+	11, // 10: orchivio.plugin.v1.TrackerAdapter.BeginConnect:input_type -> orchivio.plugin.v1.BeginConnectRequest
+	12, // 11: orchivio.plugin.v1.TrackerAdapter.CompleteConnect:input_type -> orchivio.plugin.v1.CompleteConnectRequest
+	13, // 12: orchivio.plugin.v1.TrackerAdapter.RefreshCredential:input_type -> orchivio.plugin.v1.RefreshCredentialRequest
+	14, // 13: orchivio.plugin.v1.TrackerAdapter.Disconnect:input_type -> orchivio.plugin.v1.DisconnectRequest
+	15, // 14: orchivio.plugin.v1.TrackerAdapter.CheckAccess:input_type -> orchivio.plugin.v1.CheckAccessRequest
+	16, // 15: orchivio.plugin.v1.TrackerAdapter.GetCapabilities:output_type -> orchivio.plugin.v1.Capabilities
+	2,  // 16: orchivio.plugin.v1.TrackerAdapter.StreamEvents:output_type -> orchivio.plugin.v1.TrackerEvent
+	4,  // 17: orchivio.plugin.v1.TrackerAdapter.GetTicket:output_type -> orchivio.plugin.v1.Ticket
+	6,  // 18: orchivio.plugin.v1.TrackerAdapter.PostComment:output_type -> orchivio.plugin.v1.PostCommentResponse
+	17, // 19: orchivio.plugin.v1.TrackerAdapter.BeginConnect:output_type -> orchivio.plugin.v1.BeginConnectResponse
+	18, // 20: orchivio.plugin.v1.TrackerAdapter.CompleteConnect:output_type -> orchivio.plugin.v1.CompleteConnectResponse
+	8,  // 21: orchivio.plugin.v1.TrackerAdapter.RefreshCredential:output_type -> orchivio.plugin.v1.Credential
+	19, // 22: orchivio.plugin.v1.TrackerAdapter.Disconnect:output_type -> orchivio.plugin.v1.DisconnectResponse
+	20, // 23: orchivio.plugin.v1.TrackerAdapter.CheckAccess:output_type -> orchivio.plugin.v1.CheckAccessResponse
+	15, // [15:24] is the sub-list for method output_type
+	6,  // [6:15] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_orchivio_plugin_v1_tracker_proto_init() }

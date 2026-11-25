@@ -26,6 +26,7 @@ type IssueRepoCredentialsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repos         []string               `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"` // "owner/name"
 	Write         bool                   `protobuf:"varint,2,opt,name=write,proto3" json:"write,omitempty"`
+	Credentials   []*Credential          `protobuf:"bytes,3,rep,name=credentials,proto3" json:"credentials,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -72,6 +73,13 @@ func (x *IssueRepoCredentialsRequest) GetWrite() bool {
 		return x.Write
 	}
 	return false
+}
+
+func (x *IssueRepoCredentialsRequest) GetCredentials() []*Credential {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
 }
 
 type RepoCredentials struct {
@@ -149,6 +157,7 @@ type OpenPullRequestRequest struct {
 	Head          string                 `protobuf:"bytes,3,opt,name=head,proto3" json:"head,omitempty"`
 	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	Body          string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
+	Credentials   []*Credential          `protobuf:"bytes,6,rep,name=credentials,proto3" json:"credentials,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -218,6 +227,13 @@ func (x *OpenPullRequestRequest) GetBody() string {
 	return ""
 }
 
+func (x *OpenPullRequestRequest) GetCredentials() []*Credential {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
 type PullRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
@@ -274,10 +290,11 @@ var File_orchivio_plugin_v1_codehost_proto protoreflect.FileDescriptor
 
 const file_orchivio_plugin_v1_codehost_proto_rawDesc = "" +
 	"\n" +
-	"!orchivio/plugin/v1/codehost.proto\x12\x12orchivio.plugin.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1forchivio/plugin/v1/common.proto\"I\n" +
+	"!orchivio/plugin/v1/codehost.proto\x12\x12orchivio.plugin.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1forchivio/plugin/v1/common.proto\"\x8b\x01\n" +
 	"\x1bIssueRepoCredentialsRequest\x12\x14\n" +
 	"\x05repos\x18\x01 \x03(\tR\x05repos\x12\x14\n" +
-	"\x05write\x18\x02 \x01(\bR\x05write\"\x8f\x02\n" +
+	"\x05write\x18\x02 \x01(\bR\x05write\x12@\n" +
+	"\vcredentials\x18\x03 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"\x8f\x02\n" +
 	"\x0fRepoCredentials\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x129\n" +
@@ -287,20 +304,27 @@ const file_orchivio_plugin_v1_codehost_proto_rawDesc = "" +
 	"clone_urls\x18\x04 \x03(\v22.orchivio.plugin.v1.RepoCredentials.CloneUrlsEntryR\tcloneUrls\x1a<\n" +
 	"\x0eCloneUrlsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"~\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc0\x01\n" +
 	"\x16OpenPullRequestRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
 	"\x04base\x18\x02 \x01(\tR\x04base\x12\x12\n" +
 	"\x04head\x18\x03 \x01(\tR\x04head\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12\x12\n" +
-	"\x04body\x18\x05 \x01(\tR\x04body\"7\n" +
+	"\x04body\x18\x05 \x01(\tR\x04body\x12@\n" +
+	"\vcredentials\x18\x06 \x03(\v2\x1e.orchivio.plugin.v1.CredentialR\vcredentials\"7\n" +
 	"\vPullRequest\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
-	"\x06number\x18\x02 \x01(\x03R\x06number2\xc0\x02\n" +
+	"\x06number\x18\x02 \x01(\x03R\x06number2\xaf\x06\n" +
 	"\x0fCodeHostAdapter\x12_\n" +
 	"\x0fGetCapabilities\x12*.orchivio.plugin.v1.GetCapabilitiesRequest\x1a .orchivio.plugin.v1.Capabilities\x12l\n" +
 	"\x14IssueRepoCredentials\x12/.orchivio.plugin.v1.IssueRepoCredentialsRequest\x1a#.orchivio.plugin.v1.RepoCredentials\x12^\n" +
-	"\x0fOpenPullRequest\x12*.orchivio.plugin.v1.OpenPullRequestRequest\x1a\x1f.orchivio.plugin.v1.PullRequestBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
+	"\x0fOpenPullRequest\x12*.orchivio.plugin.v1.OpenPullRequestRequest\x1a\x1f.orchivio.plugin.v1.PullRequest\x12a\n" +
+	"\fBeginConnect\x12'.orchivio.plugin.v1.BeginConnectRequest\x1a(.orchivio.plugin.v1.BeginConnectResponse\x12j\n" +
+	"\x0fCompleteConnect\x12*.orchivio.plugin.v1.CompleteConnectRequest\x1a+.orchivio.plugin.v1.CompleteConnectResponse\x12a\n" +
+	"\x11RefreshCredential\x12,.orchivio.plugin.v1.RefreshCredentialRequest\x1a\x1e.orchivio.plugin.v1.Credential\x12[\n" +
+	"\n" +
+	"Disconnect\x12%.orchivio.plugin.v1.DisconnectRequest\x1a&.orchivio.plugin.v1.DisconnectResponse\x12^\n" +
+	"\vCheckAccess\x12&.orchivio.plugin.v1.CheckAccessRequest\x1a'.orchivio.plugin.v1.CheckAccessResponseBKZIgithub.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_orchivio_plugin_v1_codehost_proto_rawDescOnce sync.Once
@@ -321,24 +345,46 @@ var file_orchivio_plugin_v1_codehost_proto_goTypes = []any{
 	(*OpenPullRequestRequest)(nil),      // 2: orchivio.plugin.v1.OpenPullRequestRequest
 	(*PullRequest)(nil),                 // 3: orchivio.plugin.v1.PullRequest
 	nil,                                 // 4: orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
-	(*timestamppb.Timestamp)(nil),       // 5: google.protobuf.Timestamp
-	(*GetCapabilitiesRequest)(nil),      // 6: orchivio.plugin.v1.GetCapabilitiesRequest
-	(*Capabilities)(nil),                // 7: orchivio.plugin.v1.Capabilities
+	(*Credential)(nil),                  // 5: orchivio.plugin.v1.Credential
+	(*timestamppb.Timestamp)(nil),       // 6: google.protobuf.Timestamp
+	(*GetCapabilitiesRequest)(nil),      // 7: orchivio.plugin.v1.GetCapabilitiesRequest
+	(*BeginConnectRequest)(nil),         // 8: orchivio.plugin.v1.BeginConnectRequest
+	(*CompleteConnectRequest)(nil),      // 9: orchivio.plugin.v1.CompleteConnectRequest
+	(*RefreshCredentialRequest)(nil),    // 10: orchivio.plugin.v1.RefreshCredentialRequest
+	(*DisconnectRequest)(nil),           // 11: orchivio.plugin.v1.DisconnectRequest
+	(*CheckAccessRequest)(nil),          // 12: orchivio.plugin.v1.CheckAccessRequest
+	(*Capabilities)(nil),                // 13: orchivio.plugin.v1.Capabilities
+	(*BeginConnectResponse)(nil),        // 14: orchivio.plugin.v1.BeginConnectResponse
+	(*CompleteConnectResponse)(nil),     // 15: orchivio.plugin.v1.CompleteConnectResponse
+	(*DisconnectResponse)(nil),          // 16: orchivio.plugin.v1.DisconnectResponse
+	(*CheckAccessResponse)(nil),         // 17: orchivio.plugin.v1.CheckAccessResponse
 }
 var file_orchivio_plugin_v1_codehost_proto_depIdxs = []int32{
-	5, // 0: orchivio.plugin.v1.RepoCredentials.expires_at:type_name -> google.protobuf.Timestamp
-	4, // 1: orchivio.plugin.v1.RepoCredentials.clone_urls:type_name -> orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
-	6, // 2: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:input_type -> orchivio.plugin.v1.GetCapabilitiesRequest
-	0, // 3: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:input_type -> orchivio.plugin.v1.IssueRepoCredentialsRequest
-	2, // 4: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:input_type -> orchivio.plugin.v1.OpenPullRequestRequest
-	7, // 5: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:output_type -> orchivio.plugin.v1.Capabilities
-	1, // 6: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:output_type -> orchivio.plugin.v1.RepoCredentials
-	3, // 7: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:output_type -> orchivio.plugin.v1.PullRequest
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	5,  // 0: orchivio.plugin.v1.IssueRepoCredentialsRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	6,  // 1: orchivio.plugin.v1.RepoCredentials.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 2: orchivio.plugin.v1.RepoCredentials.clone_urls:type_name -> orchivio.plugin.v1.RepoCredentials.CloneUrlsEntry
+	5,  // 3: orchivio.plugin.v1.OpenPullRequestRequest.credentials:type_name -> orchivio.plugin.v1.Credential
+	7,  // 4: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:input_type -> orchivio.plugin.v1.GetCapabilitiesRequest
+	0,  // 5: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:input_type -> orchivio.plugin.v1.IssueRepoCredentialsRequest
+	2,  // 6: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:input_type -> orchivio.plugin.v1.OpenPullRequestRequest
+	8,  // 7: orchivio.plugin.v1.CodeHostAdapter.BeginConnect:input_type -> orchivio.plugin.v1.BeginConnectRequest
+	9,  // 8: orchivio.plugin.v1.CodeHostAdapter.CompleteConnect:input_type -> orchivio.plugin.v1.CompleteConnectRequest
+	10, // 9: orchivio.plugin.v1.CodeHostAdapter.RefreshCredential:input_type -> orchivio.plugin.v1.RefreshCredentialRequest
+	11, // 10: orchivio.plugin.v1.CodeHostAdapter.Disconnect:input_type -> orchivio.plugin.v1.DisconnectRequest
+	12, // 11: orchivio.plugin.v1.CodeHostAdapter.CheckAccess:input_type -> orchivio.plugin.v1.CheckAccessRequest
+	13, // 12: orchivio.plugin.v1.CodeHostAdapter.GetCapabilities:output_type -> orchivio.plugin.v1.Capabilities
+	1,  // 13: orchivio.plugin.v1.CodeHostAdapter.IssueRepoCredentials:output_type -> orchivio.plugin.v1.RepoCredentials
+	3,  // 14: orchivio.plugin.v1.CodeHostAdapter.OpenPullRequest:output_type -> orchivio.plugin.v1.PullRequest
+	14, // 15: orchivio.plugin.v1.CodeHostAdapter.BeginConnect:output_type -> orchivio.plugin.v1.BeginConnectResponse
+	15, // 16: orchivio.plugin.v1.CodeHostAdapter.CompleteConnect:output_type -> orchivio.plugin.v1.CompleteConnectResponse
+	5,  // 17: orchivio.plugin.v1.CodeHostAdapter.RefreshCredential:output_type -> orchivio.plugin.v1.Credential
+	16, // 18: orchivio.plugin.v1.CodeHostAdapter.Disconnect:output_type -> orchivio.plugin.v1.DisconnectResponse
+	17, // 19: orchivio.plugin.v1.CodeHostAdapter.CheckAccess:output_type -> orchivio.plugin.v1.CheckAccessResponse
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_orchivio_plugin_v1_codehost_proto_init() }

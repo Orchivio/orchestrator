@@ -19,10 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TrackerAdapter_GetCapabilities_FullMethodName = "/orchivio.plugin.v1.TrackerAdapter/GetCapabilities"
-	TrackerAdapter_StreamEvents_FullMethodName    = "/orchivio.plugin.v1.TrackerAdapter/StreamEvents"
-	TrackerAdapter_GetTicket_FullMethodName       = "/orchivio.plugin.v1.TrackerAdapter/GetTicket"
-	TrackerAdapter_PostComment_FullMethodName     = "/orchivio.plugin.v1.TrackerAdapter/PostComment"
+	TrackerAdapter_GetCapabilities_FullMethodName   = "/orchivio.plugin.v1.TrackerAdapter/GetCapabilities"
+	TrackerAdapter_StreamEvents_FullMethodName      = "/orchivio.plugin.v1.TrackerAdapter/StreamEvents"
+	TrackerAdapter_GetTicket_FullMethodName         = "/orchivio.plugin.v1.TrackerAdapter/GetTicket"
+	TrackerAdapter_PostComment_FullMethodName       = "/orchivio.plugin.v1.TrackerAdapter/PostComment"
+	TrackerAdapter_BeginConnect_FullMethodName      = "/orchivio.plugin.v1.TrackerAdapter/BeginConnect"
+	TrackerAdapter_CompleteConnect_FullMethodName   = "/orchivio.plugin.v1.TrackerAdapter/CompleteConnect"
+	TrackerAdapter_RefreshCredential_FullMethodName = "/orchivio.plugin.v1.TrackerAdapter/RefreshCredential"
+	TrackerAdapter_Disconnect_FullMethodName        = "/orchivio.plugin.v1.TrackerAdapter/Disconnect"
+	TrackerAdapter_CheckAccess_FullMethodName       = "/orchivio.plugin.v1.TrackerAdapter/CheckAccess"
 )
 
 // TrackerAdapterClient is the client API for TrackerAdapter service.
@@ -33,6 +38,11 @@ type TrackerAdapterClient interface {
 	StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TrackerEvent], error)
 	GetTicket(ctx context.Context, in *GetTicketRequest, opts ...grpc.CallOption) (*Ticket, error)
 	PostComment(ctx context.Context, in *PostCommentRequest, opts ...grpc.CallOption) (*PostCommentResponse, error)
+	BeginConnect(ctx context.Context, in *BeginConnectRequest, opts ...grpc.CallOption) (*BeginConnectResponse, error)
+	CompleteConnect(ctx context.Context, in *CompleteConnectRequest, opts ...grpc.CallOption) (*CompleteConnectResponse, error)
+	RefreshCredential(ctx context.Context, in *RefreshCredentialRequest, opts ...grpc.CallOption) (*Credential, error)
+	Disconnect(ctx context.Context, in *DisconnectRequest, opts ...grpc.CallOption) (*DisconnectResponse, error)
+	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
 }
 
 type trackerAdapterClient struct {
@@ -92,6 +102,56 @@ func (c *trackerAdapterClient) PostComment(ctx context.Context, in *PostCommentR
 	return out, nil
 }
 
+func (c *trackerAdapterClient) BeginConnect(ctx context.Context, in *BeginConnectRequest, opts ...grpc.CallOption) (*BeginConnectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginConnectResponse)
+	err := c.cc.Invoke(ctx, TrackerAdapter_BeginConnect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *trackerAdapterClient) CompleteConnect(ctx context.Context, in *CompleteConnectRequest, opts ...grpc.CallOption) (*CompleteConnectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteConnectResponse)
+	err := c.cc.Invoke(ctx, TrackerAdapter_CompleteConnect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *trackerAdapterClient) RefreshCredential(ctx context.Context, in *RefreshCredentialRequest, opts ...grpc.CallOption) (*Credential, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Credential)
+	err := c.cc.Invoke(ctx, TrackerAdapter_RefreshCredential_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *trackerAdapterClient) Disconnect(ctx context.Context, in *DisconnectRequest, opts ...grpc.CallOption) (*DisconnectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DisconnectResponse)
+	err := c.cc.Invoke(ctx, TrackerAdapter_Disconnect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *trackerAdapterClient) CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckAccessResponse)
+	err := c.cc.Invoke(ctx, TrackerAdapter_CheckAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TrackerAdapterServer is the server API for TrackerAdapter service.
 // All implementations must embed UnimplementedTrackerAdapterServer
 // for forward compatibility.
@@ -100,6 +160,11 @@ type TrackerAdapterServer interface {
 	StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[TrackerEvent]) error
 	GetTicket(context.Context, *GetTicketRequest) (*Ticket, error)
 	PostComment(context.Context, *PostCommentRequest) (*PostCommentResponse, error)
+	BeginConnect(context.Context, *BeginConnectRequest) (*BeginConnectResponse, error)
+	CompleteConnect(context.Context, *CompleteConnectRequest) (*CompleteConnectResponse, error)
+	RefreshCredential(context.Context, *RefreshCredentialRequest) (*Credential, error)
+	Disconnect(context.Context, *DisconnectRequest) (*DisconnectResponse, error)
+	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
 	mustEmbedUnimplementedTrackerAdapterServer()
 }
 
@@ -121,6 +186,21 @@ func (UnimplementedTrackerAdapterServer) GetTicket(context.Context, *GetTicketRe
 }
 func (UnimplementedTrackerAdapterServer) PostComment(context.Context, *PostCommentRequest) (*PostCommentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostComment not implemented")
+}
+func (UnimplementedTrackerAdapterServer) BeginConnect(context.Context, *BeginConnectRequest) (*BeginConnectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginConnect not implemented")
+}
+func (UnimplementedTrackerAdapterServer) CompleteConnect(context.Context, *CompleteConnectRequest) (*CompleteConnectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteConnect not implemented")
+}
+func (UnimplementedTrackerAdapterServer) RefreshCredential(context.Context, *RefreshCredentialRequest) (*Credential, error) {
+	return nil, status.Error(codes.Unimplemented, "method RefreshCredential not implemented")
+}
+func (UnimplementedTrackerAdapterServer) Disconnect(context.Context, *DisconnectRequest) (*DisconnectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Disconnect not implemented")
+}
+func (UnimplementedTrackerAdapterServer) CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAccess not implemented")
 }
 func (UnimplementedTrackerAdapterServer) mustEmbedUnimplementedTrackerAdapterServer() {}
 func (UnimplementedTrackerAdapterServer) testEmbeddedByValue()                        {}
@@ -208,6 +288,96 @@ func _TrackerAdapter_PostComment_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TrackerAdapter_BeginConnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginConnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TrackerAdapterServer).BeginConnect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TrackerAdapter_BeginConnect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TrackerAdapterServer).BeginConnect(ctx, req.(*BeginConnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TrackerAdapter_CompleteConnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteConnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TrackerAdapterServer).CompleteConnect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TrackerAdapter_CompleteConnect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TrackerAdapterServer).CompleteConnect(ctx, req.(*CompleteConnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TrackerAdapter_RefreshCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshCredentialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TrackerAdapterServer).RefreshCredential(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TrackerAdapter_RefreshCredential_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TrackerAdapterServer).RefreshCredential(ctx, req.(*RefreshCredentialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TrackerAdapter_Disconnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisconnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TrackerAdapterServer).Disconnect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TrackerAdapter_Disconnect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TrackerAdapterServer).Disconnect(ctx, req.(*DisconnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TrackerAdapter_CheckAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TrackerAdapterServer).CheckAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TrackerAdapter_CheckAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TrackerAdapterServer).CheckAccess(ctx, req.(*CheckAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TrackerAdapter_ServiceDesc is the grpc.ServiceDesc for TrackerAdapter service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -226,6 +396,26 @@ var TrackerAdapter_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostComment",
 			Handler:    _TrackerAdapter_PostComment_Handler,
+		},
+		{
+			MethodName: "BeginConnect",
+			Handler:    _TrackerAdapter_BeginConnect_Handler,
+		},
+		{
+			MethodName: "CompleteConnect",
+			Handler:    _TrackerAdapter_CompleteConnect_Handler,
+		},
+		{
+			MethodName: "RefreshCredential",
+			Handler:    _TrackerAdapter_RefreshCredential_Handler,
+		},
+		{
+			MethodName: "Disconnect",
+			Handler:    _TrackerAdapter_Disconnect_Handler,
+		},
+		{
+			MethodName: "CheckAccess",
+			Handler:    _TrackerAdapter_CheckAccess_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
