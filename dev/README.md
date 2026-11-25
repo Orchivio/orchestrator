@@ -21,19 +21,28 @@ go test -tags e2e ./internal/e2e/
 
 `dev/env.example` nach `dev/.env` kopieren (`cp dev/env.example dev/.env`). Die folgenden Abschnitte tragen ihre Werte dort ein. `dev/.env` ist gitignored; Secrets nie committen.
 
+## Schlüssel erzeugen
+
+Der Server verschlüsselt die Zugänge der Mandanten mit `ORCHIVIO_SECRET_KEY` und startet ohne ihn nicht. Einmalig erzeugen und in `dev/.env` eintragen; danach nicht mehr ändern, sonst sind gespeicherte Verbindungen unlesbar:
+
+```sh
+openssl rand -base64 32
+```
+
 ## GitHub-App einrichten
 
 1. GitHub, Settings, Developer settings, GitHub Apps, **New GitHub App**.
-2. Name frei wählen, Homepage-URL beliebig. **Webhook** deaktivieren (kein Haken bei „Active“), es werden keine Webhooks benötigt.
+2. Name frei wählen, Homepage-URL beliebig. **Callback URL** und **Setup URL** (unter „Post installation“) beide `http://localhost:8088/oauth/callback/github`. Haken bei **Request user authorization (OAuth) during installation**. **Webhook** deaktivieren (kein Haken bei „Active“), es werden keine Webhooks benötigt.
 3. Repository permissions:
    - Contents: Read and write
    - Pull requests: Read and write
    - Metadata: Read-only
-4. „Where can this GitHub App be installed?“: Only on this account.
-5. App erstellen. Die **App ID** steht oben auf der Seite der App (Abschnitt „About“). Sie kommt als `GITHUB_APP_ID` in die `.env`.
-6. Weiter unten **Generate a private key**. Die heruntergeladene `.pem`-Datei enthält den Schlüssel.
-7. **Install App** (linke Seitenleiste), dein Konto wählen, „Only select repositories“ und **nur das Test-Repo** auswählen.
-8. Den Inhalt der PEM-Datei in `dev/.env` als mehrzeiligen Wert in Anführungszeichen eintragen:
+4. Organization permissions: **Members: Read-only**. Damit prüft Orchivio, dass die verbindende Person Admin der Organisation ist. Für persönliche Konten ist nichts nötig. Nur Organisations-Admins bzw. der Kontoinhaber können eine Installation verbinden.
+5. „Where can this GitHub App be installed?“: Only on this account (oder Any account für Organisationen).
+6. App erstellen. Die **App ID** steht oben auf der Seite der App (Abschnitt „About“). Sie kommt als `GITHUB_APP_ID` in die `.env`; die **Client ID** als `GITHUB_CLIENT_ID`.
+7. **Generate a new client secret** (Abschnitt „Client secrets“); der Wert kommt als `GITHUB_CLIENT_SECRET` in die `.env`.
+8. Weiter unten **Generate a private key**. Die heruntergeladene `.pem`-Datei enthält den Schlüssel.
+9. Den Inhalt der PEM-Datei in `dev/.env` als mehrzeiligen Wert in Anführungszeichen eintragen:
 
    ```
    GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
@@ -41,21 +50,20 @@ go test -tags e2e ./internal/e2e/
    -----END RSA PRIVATE KEY-----"
    ```
 
+Die App wird nicht von Hand installiert: Das passiert beim Verbinden (siehe unten).
+
 ## Linear einrichten
 
 Orchivio läuft in Linear als **App-User** einer OAuth-App: eigener Nutzer, erwähnbar und zuweisbar, kostet keinen Platz. Du brauchst Admin-Rechte im Workspace.
 
-1. Settings, API, **OAuth applications**, neue App anlegen (<https://linear.app/settings/api/applications/new>). Name **Orchivio** (wird zum Anzeigenamen des App-Users). Callback-URL ist Pflicht, wird aber nicht genutzt: `http://localhost/callback`. Webhooks aus.
-2. In der App **Client credentials** aktivieren. Client-ID und Client-Secret kommen als `LINEAR_CLIENT_ID` und `LINEAR_CLIENT_SECRET` in die `.env`.
-3. Beim Start holt der Adapter selbst ein Token (`client_credentials`, Scopes `read,write,app:assignable,app:mentionable`, 30 Tage gültig) und erneuert es rechtzeitig. Damit erscheint der App-User im Workspace. Er hat Zugriff auf alle öffentlichen Teams.
-4. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört als `ORCHIVIO_SEED_TEAM_KEY` in die `.env` (und damit in `trackerKey` des Projekts).
-5. Bedienung: In einem Ticket des Teams `@Orchivio` im Kommentar erwähnen, oder das Ticket an Orchivio delegieren (Zuweisen-Menü, Orchivio auswählen).
+1. Settings, API, **OAuth applications**, neue App anlegen (<https://linear.app/settings/api/applications/new>). Name **Orchivio** (wird zum Anzeigenamen des App-Users). **Redirect URI**: `http://localhost:8088/oauth/callback/linear`. Webhooks aus. „Client credentials“ ist nicht mehr nötig.
+2. Client-ID und Client-Secret kommen als `LINEAR_CLIENT_ID` und `LINEAR_CLIENT_SECRET` in die `.env`.
+3. Den **Team-Key** (z. B. `ORC`) findest du in den Team-Einstellungen. Er gehört als `ORCHIVIO_SEED_TEAM_KEY` in die `.env` (und damit in `trackerKey` des Projekts).
+4. Bedienung: In einem Ticket des Teams `@Orchivio` im Kommentar erwähnen, oder das Ticket an Orchivio delegieren (Zuweisen-Menü, Orchivio auswählen). Nach dem Verbinden erscheint Orchivio als App-User im Workspace.
 
-Alternative ohne OAuth-App: eigener Nutzer „Orchivio“ (zweiter Account, kostet einen Platz) mit persönlichem API-Key als `LINEAR_TOKEN_ACME` und `LINEAR_API_KEY_REF`, `LINEAR_CLIENT_ID` leer lassen. Nicht der eigene Account: Kommentare des Key-Besitzers ignoriert der Adapter.
+## Mandant, Verbindungen und Projekt
 
-## Mandant und Projekt anlegen
-
-`dev/run-all.sh` ruft nach dem Start `dev/seed.sh` auf. Das Skript legt über die Admin-API (`http://localhost:8088/api/v1`, Bearer-Token `ORCHIVIO_BOOTSTRAP_TOKEN`) Mandant, Profil `default` und Projekt `demo` an; wiederholte Aufrufe ändern nichts. Die Werte kommen aus der `.env`:
+`dev/run-all.sh` ruft nach dem Start `dev/seed.sh` auf. Das Skript legt über die Admin-API (`http://localhost:8088/api/v1`, Bearer-Token `ORCHIVIO_BOOTSTRAP_TOKEN`) Mandant und Profil `default` an. Das Projekt `demo` entsteht erst, wenn der Mandant eine aktive Tracker- und eine aktive Code-Host-Verbindung hat (sonst antwortet die API mit 422 „not connected“). Wiederholte Aufrufe ändern nichts. Die Werte kommen aus der `.env`:
 
 - `ORCHIVIO_BOOTSTRAP_TOKEN`: Admin-Token, gilt nur bei leerer Token-Tabelle (Erzeugung siehe `dev/env.example`).
 - `ORCHIVIO_SEED_TENANT`: Mandanten-Slug.
@@ -64,7 +72,21 @@ Alternative ohne OAuth-App: eigener Nutzer „Orchivio“ (zweiter Account, kost
 - `ORCHIVIO_SEED_EMAIL`: deine Linear-E-Mail-Adresse für `roles.questions` und `roles.tasks`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
 - `ORCHIVIO_SEED_MODEL`: Modell des Profils; ein Alias wie `sonnet` funktioniert mit Claude Code.
 
-Ein weiteres Projekt lässt sich zur Laufzeit ohne Neustart anlegen (`<profile-id>` aus `GET /tenants/acme/profiles`):
+### Verbinden
+
+Fehlt eine Verbindung, gibt `seed.sh` die Links aus (`POST /api/v1/tenants/acme/connections/{linear|github}/authorize`). Beide im Browser öffnen und zustimmen (GitHub: Installation auf das Test-Repo beschränken), danach `dev/seed.sh` erneut ausführen: Jetzt entsteht das Projekt. Den Stand zeigt `GET /api/v1/tenants/acme/connections` (`kind` tracker oder codehost, `status` active oder needs_reauth; bei `needs_reauth` den Link erneut erzeugen und öffnen).
+
+### Mandanten-Admin-Token
+
+Für den Alltag statt des Bootstrap-Tokens ein Token nur für einen Mandanten ausstellen (Antwort enthält das Token einmalig):
+
+```sh
+curl -fsS -X POST http://localhost:8088/api/v1/tokens \
+  -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "acme-admin", "expiresIn": "720h", "tenant": "acme"}'
+```
+
+Ein weiteres Projekt lässt sich zur Laufzeit ohne Neustart anlegen (`<profile-id>` aus `GET /tenants/acme/profiles`; setzt aktive Verbindungen voraus):
 
 ```sh
 curl -fsS -X POST http://localhost:8088/api/v1/tenants/acme/projects \

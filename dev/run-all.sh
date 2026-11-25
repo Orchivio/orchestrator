@@ -12,12 +12,8 @@ if [[ -f "$here/.env" ]]; then
 fi
 
 missing=()
-if [[ -n "${LINEAR_CLIENT_ID:-}" ]]; then
-  linear_vars="LINEAR_CLIENT_SECRET_REF"
-else
-  linear_vars="LINEAR_API_KEY_REF"
-fi
-for v in $linear_vars ORCHIVIO_BOOTSTRAP_TOKEN GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF; do
+for v in ORCHIVIO_SECRET_KEY ORCHIVIO_BOOTSTRAP_TOKEN LINEAR_CLIENT_ID LINEAR_CLIENT_SECRET_REF \
+  GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET_REF; do
   [[ -n "${!v:-}" ]] || missing+=("$v")
 done
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then

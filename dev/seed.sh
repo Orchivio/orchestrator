@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Legt Mandant, Profil und Projekt über die Admin-API an (idempotent).
+# Legt Mandant und Profil über die Admin-API an, das Projekt erst, wenn Tracker und
+# Code-Host verbunden sind; sonst gibt es die Verbinden-Links aus (idempotent).
 # Liest dev/.env; benötigt curl und jq. Gibt das Token nie aus.
 set -euo pipefail
 
@@ -63,6 +64,22 @@ if [[ -z "$profile_id" ]]; then
   echo "Profil default angelegt"
 else
   echo "Profil default vorhanden"
+fi
+
+connections="$(call GET "/tenants/$tenant/connections")"
+missing_links=()
+for pair in tracker:linear codehost:github; do
+  kind="${pair%%:*}" adapter="${pair##*:}"
+  if [[ "$(jq -r --arg k "$kind" '[.[] | select(.kind == $k and .status == "active")] | length' <<<"$connections")" == 0 ]]; then
+    url="$(call POST "/tenants/$tenant/connections/$adapter/authorize" '{}' | jq -r .url)"
+    missing_links+=("$adapter: $url")
+  fi
+done
+if ((${#missing_links[@]} > 0)); then
+  echo "Verbindung fehlt; Link im Browser öffnen, danach seed.sh erneut ausführen:"
+  printf '  %s\n' "${missing_links[@]}"
+  echo "Projekt demo ($team_key) nicht angelegt"
+  exit 0
 fi
 
 project_id="$(call GET "/tenants/$tenant/projects" | jq -r --arg key "$team_key" '[.[] | select(.trackerKey == $key)][0].id // empty')"
