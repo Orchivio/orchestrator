@@ -22,6 +22,14 @@ func connIn(tenant, kind, adapter, external string) admin.Connection {
 
 var cred = admin.SealedCredential{KeyID: "k1", Data: []byte("sealed")}
 
+// setCredential stores cred with refreshAfter and status on the unchanged row c.
+func setCredential(t *testing.T, s *Store, c admin.Connection, refreshAfter *time.Time, status string) {
+	t.Helper()
+	if ok, err := s.UpdateConnectionCredentialIf(context.Background(), c.ID, c.UpdatedAt, cred, refreshAfter, status); err != nil || !ok {
+		t.Fatalf("update credential of %s: %v, %v", c.ID, ok, err)
+	}
+}
+
 func TestSaveConnectionIsExclusiveAcrossTenants(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
 	a, b, ext := newTenant(t, s), newTenant(t, s), uuid.NewString()
@@ -47,9 +55,7 @@ func TestSaveConnectionReconnectUpdatesSameRow(t *testing.T) {
 	if first.RefreshAfter == nil || !first.RefreshAfter.Equal(due1) {
 		t.Fatalf("insert refresh_after = %v", first.RefreshAfter)
 	}
-	if err = s.UpdateConnectionCredential(ctx, first.ID, cred, nil, admin.StatusNeedsReauth); err != nil {
-		t.Fatal(err)
-	}
+	setCredential(t, s, first, nil, admin.StatusNeedsReauth)
 	again := connIn(a.Slug, admin.KindCodeHost, "github", ext)
 	again.Label = "new"
 	again.RefreshAfter = &due2
@@ -121,9 +127,7 @@ func TestClaimDueConnectionsLeases(t *testing.T) {
 		t.Fatal(err)
 	}
 	past := base.Add(-time.Hour)
-	if err = s.UpdateConnectionCredential(ctx, due.ID, cred, &past, admin.StatusActive); err != nil {
-		t.Fatal(err)
-	}
+	setCredential(t, s, due, &past, admin.StatusActive)
 	lease := base.Add(10 * time.Minute)
 	conns, creds, err := s.ClaimDueConnections(ctx, base, lease)
 	if err != nil {
@@ -169,9 +173,7 @@ func TestListAllActiveConnectionsSkipsNeedsReauthAndDeleted(t *testing.T) {
 	ok, _ := s.SaveConnection(ctx, connIn(a.Slug, admin.KindCodeHost, "github", uuid.NewString()), cred)
 	bad, _ := s.SaveConnection(ctx, connIn(a.Slug, admin.KindCodeHost, "github", uuid.NewString()), cred)
 	gone, _ := s.SaveConnection(ctx, connIn(a.Slug, admin.KindCodeHost, "github", uuid.NewString()), cred)
-	if err := s.UpdateConnectionCredential(ctx, bad.ID, cred, nil, admin.StatusNeedsReauth); err != nil {
-		t.Fatal(err)
-	}
+	setCredential(t, s, bad, nil, admin.StatusNeedsReauth)
 	if err := s.DeleteConnection(ctx, a.Slug, gone.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -311,9 +313,7 @@ func TestUpdateConnectionCredentialIfSkipsRowChangedSinceClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	past := base.Add(-time.Hour)
-	if err = s.UpdateConnectionCredential(ctx, saved.ID, cred, &past, admin.StatusActive); err != nil {
-		t.Fatal(err)
-	}
+	setCredential(t, s, saved, &past, admin.StatusActive)
 	before, err := s.GetConnection(ctx, a.Slug, saved.ID)
 	if err != nil {
 		t.Fatal(err)

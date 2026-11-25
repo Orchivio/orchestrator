@@ -372,17 +372,6 @@ func (m *memStore) saveConnection(c admin.Connection, cred admin.SealedCredentia
 	return c, nil
 }
 
-func (m *memStore) UpdateConnectionCredential(_ context.Context, id uuid.UUID, cred admin.SealedCredential, refreshAfter *time.Time, status string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	mc, ok := m.conns[id]
-	if !ok || mc.dead {
-		return admin.ErrNotFound
-	}
-	mc.cred, mc.c.RefreshAfter, mc.c.Status, mc.c.UpdatedAt = cred, refreshAfter, status, time.Now()
-	return nil
-}
-
 // UpdateConnectionCredentialIf writes only if the row's UpdatedAt is still expected.
 func (m *memStore) UpdateConnectionCredentialIf(_ context.Context, id uuid.UUID, expected time.Time, cred admin.SealedCredential, refreshAfter *time.Time, status string) (bool, error) {
 	m.mu.Lock()

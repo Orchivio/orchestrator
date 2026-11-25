@@ -260,8 +260,9 @@ func TestCallbackReconnectMarksActive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := e.store.UpdateConnectionCredential(ctx, first.ID, e.store.conns[first.ID].cred, nil, admin.StatusNeedsReauth); err != nil {
-		t.Fatal(err)
+	if ok, err := e.store.UpdateConnectionCredentialIf(ctx, first.ID, e.store.conns[first.ID].c.UpdatedAt, e.store.conns[first.ID].cred, nil,
+		admin.StatusNeedsReauth); err != nil || !ok {
+		t.Fatal(ok, err)
 	}
 	again, err := e.connect(t, "linear", "ws1")
 	if err != nil || again.ID != first.ID || again.Status != admin.StatusActive {

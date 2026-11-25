@@ -184,7 +184,6 @@ type Store interface {
 	// ReplaceTrackerConnection atomically soft-deletes the tenant's live tracker
 	// connection to another workspace and saves c like SaveConnection; on error nothing changes.
 	ReplaceTrackerConnection(ctx context.Context, tenant string, c Connection, cred SealedCredential) (Connection, error)
-	UpdateConnectionCredential(ctx context.Context, id uuid.UUID, cred SealedCredential, refreshAfter *time.Time, status string) error
 	// UpdateConnectionCredentialIf writes only while the row's UpdatedAt equals
 	// expectedUpdatedAt (a claim keeps it, a reconnect moves it); false = changed underneath.
 	UpdateConnectionCredentialIf(ctx context.Context, id uuid.UUID, expectedUpdatedAt time.Time, cred SealedCredential,

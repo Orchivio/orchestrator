@@ -83,15 +83,6 @@ func (s *Store) saveConnection(ctx context.Context, q *db.Queries, c admin.Conne
 	return toConnection(row), nil
 }
 
-func (s *Store) UpdateConnectionCredential(ctx context.Context, id uuid.UUID, cred admin.SealedCredential, refreshAfter *time.Time, status string) error {
-	n, err := s.q.UpdateConnectionCredential(ctx, db.UpdateConnectionCredentialParams{ID: id, KeyID: cred.KeyID,
-		Credential: cred.Data, RefreshAfter: refreshAfter, Status: status, UpdatedAt: s.now()})
-	if err == nil && n == 0 {
-		return fmt.Errorf("connection %s: %w", id, admin.ErrNotFound)
-	}
-	return err
-}
-
 func (s *Store) UpdateConnectionCredentialIf(ctx context.Context, id uuid.UUID, expectedUpdatedAt time.Time, cred admin.SealedCredential,
 	refreshAfter *time.Time, status string) (bool, error) {
 	n, err := s.q.UpdateConnectionCredentialIf(ctx, db.UpdateConnectionCredentialIfParams{ID: id, UpdatedAt: expectedUpdatedAt,
