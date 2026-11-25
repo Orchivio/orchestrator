@@ -45,7 +45,6 @@ import (
 )
 
 const (
-	publicURL     = "http://timeline.test"
 	userEmail     = "dev@example.com"
 	workerID      = "w1"
 	repoSlug      = "acme/playground"
@@ -334,9 +333,9 @@ func setup(t *testing.T) *env {
 	reg := adapters.NewRegistry(cfg, log)
 	t.Cleanup(reg.Close)
 	reg.SetDialer(dialer)
-	rep := reporter.New(func(tn string) reporter.TrackerClient { return reg.TrackerFor(tn) }, cfg, publicURL)
+	rep := reporter.New(func(tn string) reporter.TrackerClient { return reg.TrackerFor(tn) }, cfg)
 	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
-	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, time.Minute, publicURL)
+	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, time.Minute)
 	lisW := serve(t, func(s *grpc.Server) { workerv1.RegisterWorkerServiceServer(s, grpcapi.NewWorker(orch)) })
 
 	done := make(chan struct{})
@@ -556,7 +555,7 @@ func TestEndToEndWithFakes(t *testing.T) {
 		}
 		e.reportAndComplete(t, a, &workerv1.CompleteRunRequest{Outcome: workerv1.CompleteRunRequest_ANSWERED, Text: "Die README ist leer."})
 		eventually(t, "answer comment", hasComment(e, "ORC-1", "Die README ist leer."))
-		eventually(t, "timeline link", hasComment(e, "ORC-1", publicURL+"/runs/"+a.GetRunId()))
+		eventually(t, "run id", hasComment(e, "ORC-1", "Run-ID: `"+a.GetRunId()+"`"))
 	})
 
 	t.Run("task opens a pull request and links it in the ticket", func(t *testing.T) {

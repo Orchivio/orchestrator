@@ -106,7 +106,7 @@ func setupWithStore(t *testing.T) (workerv1.WorkerServiceClient, uuid.UUID, *sto
 		State: router.StateQueued, Repos: []string{"a/b"}}
 	st := &store{runs: map[uuid.UUID]*router.Run{run.ID: run}}
 	o := orchestrator.New(cfg, st, host{}, tracker{}, reporter{}, func(context.Context, uuid.UUID) error { return nil },
-		time.Now, time.Hour, "http://x")
+		time.Now, time.Hour)
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	workerv1.RegisterWorkerServiceServer(srv, NewWorker(o))

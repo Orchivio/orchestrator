@@ -40,7 +40,7 @@ func newReporter(t *testing.T) (*Reporter, *fakeTracker) {
 		t.Fatal(err)
 	}
 	ft := &fakeTracker{}
-	return New(func(string) TrackerClient { return ft }, sync, "https://orc.example/"), ft
+	return New(func(string) TrackerClient { return ft }, sync), ft
 }
 
 func TestReporterSkipsDisabledMilestone(t *testing.T) {
@@ -51,15 +51,15 @@ func TestReporterSkipsDisabledMilestone(t *testing.T) {
 	}
 }
 
-func TestReporterRedactsAndLinksTimeline(t *testing.T) {
+func TestMilestoneCommentHasRunIDNotLink(t *testing.T) {
 	r, ft := newReporter(t)
 	run := router.Run{ID: uuid.New(), Tenant: "acme", Project: "ORC", TicketRef: "ORC-1"}
 	secret := "ghp_" + strings.Repeat("b", 36)
 	if err := r.Milestone(context.Background(), run, config.MilestoneResult, "key "+secret); err != nil {
 		t.Fatal(err)
 	}
-	want := "key ****\n\n[Timeline](https://orc.example/runs/" + run.ID.String() + ")"
-	if len(ft.bodies) != 1 || ft.bodies[0] != want || ft.refs[0] != "ORC-1" {
+	want := "key ****\n\nRun-ID: `" + run.ID.String() + "`"
+	if len(ft.bodies) != 1 || ft.bodies[0] != want || ft.refs[0] != "ORC-1" || strings.Contains(ft.bodies[0], "/runs/") {
 		t.Errorf("bodies = %q", ft.bodies)
 	}
 }

@@ -75,7 +75,6 @@ func run(parent context.Context, log *slog.Logger) error {
 	defer cancel()
 	// insecure gRPC, bind localhost; mTLS before remote workers.
 	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", "127.0.0.1:7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
-	publicURL := env("ORCHIVIO_PUBLIC_URL", defaultPublicURL)
 
 	db, svc, connReg, err := openService(ctx, log)
 	if err != nil {
@@ -99,9 +98,9 @@ func run(parent context.Context, log *slog.Logger) error {
 	defer background.Wait() // runs before reg.Close and db.Close
 	defer cancel()
 
-	rep := reporter.New(func(t string) reporter.TrackerClient { return reg.TrackerFor(t) }, cfg, publicURL)
+	rep := reporter.New(func(t string) reporter.TrackerClient { return reg.TrackerFor(t) }, cfg)
 	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
-	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, defaultLease, publicURL)
+	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, defaultLease)
 
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {

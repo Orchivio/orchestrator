@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/orchivio/orchestrator/contract/redact"
 	"github.com/orchivio/orchestrator/internal/config"
@@ -19,14 +18,13 @@ type TrackerClient interface {
 
 // Reporter implements router.Reporter.
 type Reporter struct {
-	trackers  func(tenant string) TrackerClient
-	cfg       *config.Sync
-	publicURL string
+	trackers func(tenant string) TrackerClient
+	cfg      *config.Sync
 }
 
 // New returns a reporter; trackers may return nil for unknown tenants.
-func New(trackers func(tenant string) TrackerClient, cfg *config.Sync, publicURL string) *Reporter {
-	return &Reporter{trackers: trackers, cfg: cfg, publicURL: strings.TrimRight(publicURL, "/")}
+func New(trackers func(tenant string) TrackerClient, cfg *config.Sync) *Reporter {
+	return &Reporter{trackers: trackers, cfg: cfg}
 }
 
 // Milestone comments on the run's ticket if the project enabled the milestone.
@@ -35,11 +33,11 @@ func (r *Reporter) Milestone(ctx context.Context, run router.Run, milestone, tex
 	if !ok || !slices.Contains(project.Milestones, milestone) {
 		return nil
 	}
-	body := redact.String(text) + fmt.Sprintf("\n\n[Timeline](%s/runs/%s)", r.publicURL, run.ID)
+	body := redact.String(text) + "\n\nRun-ID: `" + run.ID.String() + "`"
 	return r.post(ctx, run.Tenant, run.TicketRef, body)
 }
 
-// Notice always comments; it belongs to no run and has no timeline link.
+// Notice always comments; it belongs to no run and has no run id.
 func (r *Reporter) Notice(ctx context.Context, tenant, ticketRef, text string) error {
 	return r.post(ctx, tenant, ticketRef, redact.String(text))
 }

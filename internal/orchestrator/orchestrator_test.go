@@ -148,7 +148,7 @@ func newFixture(t *testing.T, kind string) *fixture {
 	f.s.queue = []uuid.UUID{r.ID}
 	f.o = New(sync, f.s, f.host, fakeTracker{}, f.rep,
 		func(_ context.Context, id uuid.UUID) error { f.followed = append(f.followed, id); return nil },
-		func() time.Time { return f.now }, time.Hour, "https://orc.example/")
+		func() time.Time { return f.now }, time.Hour)
 	return f
 }
 
@@ -274,7 +274,7 @@ func TestCompleteAnsweredPostsResult(t *testing.T) {
 	}
 }
 
-func TestCompletePushedOpensPRAndReportsLink(t *testing.T) {
+func TestPullRequestBodyHasRunIDNotLink(t *testing.T) {
 	f := newFixture(t, "task")
 	f.lease(t)
 	err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "done it", map[string]string{"soemii/b": branch, "soemii/a": branch})
@@ -286,7 +286,7 @@ func TestCompletePushedOpensPRAndReportsLink(t *testing.T) {
 	}
 	pr := f.host.prs[0]
 	if pr.Repo != "soemii/a" || pr.Head != branch || pr.Base != "main" || pr.Title != "ORC-12: Fix it" ||
-		!strings.Contains(pr.Body, "done it") || !strings.Contains(pr.Body, "[Timeline](https://orc.example/runs/"+f.run.ID.String()+")") {
+		!strings.Contains(pr.Body, "done it") || !strings.HasSuffix(pr.Body, "\n\nRun-ID: `"+f.run.ID.String()+"`") || strings.Contains(pr.Body, "/runs/") {
 		t.Errorf("pr = %v", pr)
 	}
 	if f.host.prs[1].Base != "develop" {

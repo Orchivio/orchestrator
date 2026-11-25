@@ -38,5 +38,5 @@ if [[ "${ORCHIVIO_PULL:-always}" != never ]]; then
 fi
 "${compose[@]}" up -d
 "$here/seed.sh"
-echo "Orchivio läuft (${ORCHIVIO_VERSION:-main}). Timeline: http://localhost:8088/runs/<id>"
+echo "Orchivio läuft (${ORCHIVIO_VERSION:-main}). Runs: GET http://localhost:8088/api/v1/tenants/<slug>/projects/<id>/runs (Bearer-Token)"
 echo "Logs: podman compose -f dev/compose.yaml logs -f   Stoppen: dev/stop-all.sh"

@@ -57,15 +57,14 @@ var eventTypes = []string{"run.started", "tool.called", "tool.finished", "file.c
 
 // Orchestrator implements the worker-facing run lifecycle.
 type Orchestrator struct {
-	cfg       *config.Sync
-	store     Store
-	codeHost  CodeHost
-	tracker   router.Tracker
-	reporter  router.Reporter
-	followUp  func(ctx context.Context, conversationID uuid.UUID) error
-	now       func() time.Time
-	leaseFor  time.Duration
-	publicURL string
+	cfg      *config.Sync
+	store    Store
+	codeHost CodeHost
+	tracker  router.Tracker
+	reporter router.Reporter
+	followUp func(ctx context.Context, conversationID uuid.UUID) error
+	now      func() time.Time
+	leaseFor time.Duration
 	// ponytail: global lock, conditional UPDATE ... WHERE state='running' if more than one server process
 	completeMu sync.Mutex
 }
@@ -74,9 +73,9 @@ type Orchestrator struct {
 // run's profile is unknown.
 func New(cfg *config.Sync, s Store, ch CodeHost, tracker router.Tracker, rep router.Reporter,
 	followUp func(ctx context.Context, conversationID uuid.UUID) error, now func() time.Time,
-	leaseFor time.Duration, publicURL string) *Orchestrator {
+	leaseFor time.Duration) *Orchestrator {
 	return &Orchestrator{cfg: cfg, store: s, codeHost: ch, tracker: tracker, reporter: rep,
-		followUp: followUp, now: now, leaseFor: leaseFor, publicURL: strings.TrimRight(publicURL, "/")}
+		followUp: followUp, now: now, leaseFor: leaseFor}
 }
 
 // Lease hands the next queued run to the worker; nil when the queue is empty.
@@ -294,7 +293,7 @@ func (o *Orchestrator) completePushed(ctx context.Context, run *router.Run, bran
 func (o *Orchestrator) openPullRequests(ctx context.Context, run *router.Run, branches map[string]string, text string) ([]string, error) {
 	_, project, _ := o.cfg.Current().ProjectFor(run.Tenant, run.Project)
 	title := run.TicketRef + ": " + o.ticketTitle(ctx, run)
-	body := text + fmt.Sprintf("\n\n[Timeline](%s/runs/%s)", o.publicURL, run.ID)
+	body := text + "\n\nRun-ID: `" + run.ID.String() + "`"
 	slugs := make([]string, 0, len(branches))
 	for slug := range branches {
 		slugs = append(slugs, slug)
