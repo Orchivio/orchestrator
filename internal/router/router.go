@@ -19,7 +19,7 @@ import (
 const (
 	NoticeMissingRole = "Dafür fehlt dir die Rolle in Orchivio. Bitte wende dich an die Verantwortlichen des Projekts."
 	TextWhichRepo     = "Welches Repo ist gemeint? Setze bitte ein passendes Label und antworte hier."
-	TextInternalError = "Abgebrochen: interner Fehler. Details in der Timeline."
+	TextInternalError = "Abgebrochen: interner Fehler. Details über die Run-ID in der Verwaltungs-API."
 
 	eventRunState      = "run.state"
 	eventRunClassified = "run.classified"

@@ -1,5 +1,5 @@
 // Package store is the Postgres adapter for the router, orchestrator and
-// timeline persistence ports.
+// run persistence ports.
 package store
 
 import (

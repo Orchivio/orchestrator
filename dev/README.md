@@ -122,8 +122,9 @@ Jedes Repo baut in GitHub Actions (`.github/workflows/ci.yml`), trunk-based:
 ## Logs und Runs
 
 - Logs: `podman compose -f dev/compose.yaml logs -f [orchestrator|worker|adapter-linear|adapter-github|proxy]`.
-- Runs ansehen (Bearer-Token nötig, neueste zuerst; Filter `ticket`, `state`, `limit`, `before`): `curl -H "Authorization: Bearer $TOKEN" localhost:8088/api/v1/tenants/acme/projects/<id>/runs`
-- Einzelner Run mit Events: `curl -H "Authorization: Bearer $TOKEN" localhost:8088/api/v1/tenants/acme/projects/<id>/runs/$RUN_ID`. Die Run-ID steht in jedem Meilenstein-Kommentar im Ticket und im PR-Text.
+- Projekt-ID ermitteln: `curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/acme/projects` liefert die Projekte mit ihrer `id` (`<project-id>` unten).
+- Runs ansehen (Bearer-Token nötig, neueste zuerst; Filter `ticket`, `state`, `limit`, `before`): `curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/acme/projects/<project-id>/runs`
+- Einzelner Run mit Events: `curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/acme/projects/<project-id>/runs/<run-id>`. Die Run-ID steht in jedem Meilenstein-Kommentar im Ticket und im PR-Text.
 
 ## Manuelle Checkliste
 

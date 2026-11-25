@@ -176,7 +176,7 @@ paths:
         - {name: before, in: query, required: false, schema: {type: string}, description: Opaque cursor, the next value of the previous page}
       responses:
         "200": {$ref: "#/components/responses/RunListOK"}
-        "400": {$ref: "#/components/responses/BadRequest"}
+        "400": {$ref: "#/components/responses/Invalid"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
   /tenants/{slug}/projects/{id}/runs/{runId}:
