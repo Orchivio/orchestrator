@@ -30,6 +30,10 @@ type Tenant struct {
 	TrackerCredential []byte
 	// CodeHostCredentials holds one entry per active code host connection.
 	CodeHostCredentials [][]byte
+	// TrackerConnectionID and CodeHostConnectionIDs name the connections the
+	// credentials above came from, index for index.
+	TrackerConnectionID   uuid.UUID
+	CodeHostConnectionIDs []uuid.UUID
 }
 
 type AdapterRef struct {

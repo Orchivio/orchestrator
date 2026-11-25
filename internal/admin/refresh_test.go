@@ -154,3 +154,38 @@ func TestRefreshGivesUpOnHangingAdapter(t *testing.T) {
 		t.Fatalf("status=%s logs=%s", mc.c.Status, e.logs)
 	}
 }
+
+func TestMarkNeedsReauthStopsConnectionAndIsIdempotent(t *testing.T) {
+	e := newConnEnv(t)
+	c := e.dueConnection(t, "linear", "ws1")
+	changes := e.countChanges()
+
+	for range 2 {
+		if err := e.svc.MarkNeedsReauth(ctx, "acme", c.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := e.svc.GetConnection(ctx, "acme", c.ID)
+	if err != nil || got.Status != admin.StatusNeedsReauth || *changes != 1 {
+		t.Fatalf("status=%s err=%v changes=%d", got.Status, err, *changes)
+	}
+	cfg, err := e.svc.Load(ctx)
+	if err != nil || cfg.Tenants["acme"].TrackerCredential != nil {
+		t.Fatalf("needs_reauth credential still in config (err %v)", err)
+	}
+	logs := e.logs.String()
+	if !strings.Contains(logs, c.ID.String()) || strings.Contains(logs, "plain-ws1") {
+		t.Fatalf("logs = %s", logs)
+	}
+}
+
+func TestLoadCarriesConnectionIDs(t *testing.T) {
+	e := newConnEnv(t)
+	c := e.dueConnection(t, "linear", "ws1")
+
+	cfg, err := e.svc.Load(ctx)
+	if err != nil || cfg.Tenants["acme"].TrackerConnectionID != c.ID {
+		t.Fatalf("tracker connection id = %v, want %v (err %v)", cfg.Tenants["acme"].TrackerConnectionID, c.ID, err)
+	}
+}

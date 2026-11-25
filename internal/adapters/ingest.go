@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 	"github.com/orchivio/orchestrator/internal/config"
 )
@@ -123,13 +125,13 @@ func ingestTenant(runCtx, ctx context.Context, reg *Registry, tenant string, key
 // event arrived.
 func streamOnce(runCtx, ctx context.Context, reg *Registry, tenant string, keys []string,
 	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger) (received bool, err error) {
-	c, cred, err := reg.trackerClient(ctx, tenant)
+	c, cred, id, err := reg.trackerClient(ctx, tenant)
 	if err != nil {
 		return false, err
 	}
 	stream, err := c.StreamEvents(ctx, &pluginv1.StreamEventsRequest{ProjectKeys: keys, Credential: cred})
 	if err != nil {
-		return false, err
+		return false, reg.rejected(ctx, tenant, []uuid.UUID{id}, err)
 	}
 	for {
 		ev, err := stream.Recv()
@@ -137,7 +139,7 @@ func streamOnce(runCtx, ctx context.Context, reg *Registry, tenant string, keys 
 			return received, nil
 		}
 		if err != nil {
-			return received, err
+			return received, reg.rejected(ctx, tenant, []uuid.UUID{id}, err)
 		}
 		received = true
 		if herr := handle(runCtx, tenant, ev); herr != nil {

@@ -93,6 +93,12 @@ func run(parent context.Context, log *slog.Logger) error {
 	log.Info("config loaded", "tenants", len(cfg.Current().Tenants))
 	reg := adapters.NewRegistry(cfg, log)
 	defer reg.Close()
+	// A rejected token takes effect now: marking reloads the config, which drops the connection's stream.
+	reg.OnRejected(func(ctx context.Context, tenant string, id uuid.UUID) {
+		if err := svc.MarkNeedsReauth(ctx, tenant, id); err != nil {
+			log.Error("mark connection needs_reauth", "tenant", tenant, "connection", id, "error", err)
+		}
+	})
 
 	var background sync.WaitGroup
 	defer background.Wait() // runs before reg.Close and db.Close
