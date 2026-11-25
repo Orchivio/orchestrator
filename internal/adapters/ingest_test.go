@@ -444,3 +444,31 @@ func TestIngestStopsStreamWhenTrackerCredentialGone(t *testing.T) {
 		t.Fatalf("streams = %d, want 1", n)
 	}
 }
+
+func TestRegistryAdapterNameIsCachedWithConnection(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	pluginv1.RegisterTrackerAdapterServer(srv, &fakeTracker{})
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	reg := NewRegistry(cfg, log)
+	reg.dialer = func(string) (*grpc.ClientConn, error) {
+		return grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	t.Cleanup(reg.Close)
+
+	got, err := reg.AdapterName(context.Background(), "acme", "tracker")
+	if err != nil || got != "fake" {
+		t.Fatalf("AdapterName = %q, %v", got, err)
+	}
+	if _, err := reg.AdapterName(context.Background(), "nope", "tracker"); err == nil {
+		t.Fatal("unknown tenant must fail")
+	}
+}

@@ -81,6 +81,8 @@ func (host) OpenPullRequest(context.Context, string, *pluginv1.OpenPullRequestRe
 
 type tracker struct{}
 
+func (tracker) AdapterName(context.Context, string) (string, error) { return "fake", nil }
+
 func (tracker) GetTicket(context.Context, string, string) (*pluginv1.Ticket, error) {
 	return &pluginv1.Ticket{Title: "T"}, nil
 }

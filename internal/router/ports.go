@@ -41,12 +41,14 @@ type Input struct {
 	ID             uuid.UUID
 	Tenant         string
 	ConversationID uuid.UUID
-	ActorEmail     string
-	Body           string
-	Trigger        classifier.Trigger
-	RunID          *uuid.UUID
-	CreatedAt      time.Time
-	FromAgent      bool
+	// ActorEmail holds the identity of the actor that matched a role: an e-mail
+	// address or "<system>:<id>". The column keeps its historic name.
+	ActorEmail string
+	Body       string
+	Trigger    classifier.Trigger
+	RunID      *uuid.UUID
+	CreatedAt  time.Time
+	FromAgent  bool
 }
 
 // Run is one agent execution. Project holds the tracker key of the project.
@@ -98,6 +100,9 @@ type Store interface {
 
 // Tracker reads tickets from the tenant's tracker adapter.
 type Tracker interface {
+	// AdapterName is the adapter_name the tracker adapter reports; it names the
+	// system in "<system>:<id>" role entries.
+	AdapterName(ctx context.Context, tenant string) (string, error)
 	GetTicket(ctx context.Context, tenant, ref string) (*pluginv1.Ticket, error)
 }
 

@@ -267,3 +267,30 @@ func TestBadIDWithBadIfMatchWritesOneProblem(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectRoundTripsNewFields(t *testing.T) {
+	e := newEnv(t)
+	pid := e.seedTenantAndProfile()
+	body := `{"name":"P","trackerKey":"ACME","profileId":"` + pid + `","repos":[{"slug":"o/x","baseBranch":"main"}],"classifier":{"defaultRepo":"o/x"},` +
+		`"roles":{"questions":["jira:jdoe"],"tasks":["a@b.de"]},"statusMap":{"running":"In Progress"},"reviewTrigger":"any"}`
+	rec := e.do("POST", "/api/v1/tenants/acme/projects", body)
+	if rec.Code != 201 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	got := decode(t, e.do("GET", rec.Header().Get("Location"), ""))
+	if sm, _ := got["statusMap"].(map[string]any); sm["running"] != "In Progress" || got["reviewTrigger"] != "any" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestMinimalProjectReturnsEmptyStatusMap(t *testing.T) {
+	e := newEnv(t)
+	pid := e.seedTenantAndProfile()
+	rec := e.do("POST", "/api/v1/tenants/acme/projects", projectBody(pid, "o/x"))
+	got := e.do("GET", rec.Header().Get("Location"), "").Body.String()
+	for _, want := range []string{`"statusMap":{}`, `"reviewTrigger":"mention"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %s in %s", want, got)
+		}
+	}
+}

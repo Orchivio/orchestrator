@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -139,7 +140,10 @@ func (s *fakeStore) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ st
 type fakeTracker struct {
 	labels []string
 	err    error
+	system string
 }
+
+func (f *fakeTracker) AdapterName(context.Context, string) (string, error) { return f.system, nil }
 
 func (f *fakeTracker) GetTicket(_ context.Context, _, ref string) (*pluginv1.Ticket, error) {
 	if f.err != nil {
@@ -538,4 +542,27 @@ func (s *fakeStore) firstSource() string {
 		return strings.Split(k, "/")[1]
 	}
 	return ""
+}
+
+func TestHandleAcceptsSystemUsernameRole(t *testing.T) {
+	f := newFixture(t, "soemii/playground")
+	f.tr.system = "jira"
+	p := &f.r.cfg.Current().Tenants["acme"].Projects[0]
+	p.Roles = config.Roles{Questions: []string{"jira:jdoe"}, Tasks: []string{"jira:jdoe"}}
+	ev := &pluginv1.TrackerEvent{ExternalId: "e1", Kind: pluginv1.TrackerEvent_ASSIGNED, TicketRef: "ORC-12", ProjectKey: "ORC",
+		Actor: &pluginv1.Actor{Id: "5b10", Username: "jdoe", Email: "other@example.com"}}
+	handle(t, f, ev)
+	if len(f.s.runs) != 1 || f.s.runs[0].Kind != classifier.KindTask {
+		t.Fatalf("runs = %+v notices = %v", f.s.runs, f.rep.notices)
+	}
+	if got := f.s.inputs[0].ActorEmail; got != "jira:jdoe" {
+		t.Fatalf("stored identity = %q, want the matching one", got)
+	}
+}
+
+func TestStatusMapKeysAreRunStates(t *testing.T) {
+	want := []string{StateRunning, StateWaitingForInput, StatePushing, StateSucceeded, StateFailed, StateCancelled}
+	if got := config.StatusMapStates(); !slices.Equal(got, want) {
+		t.Fatalf("config states %v, router states %v", got, want)
+	}
 }

@@ -58,6 +58,31 @@ type Project struct {
 	Roles        Roles
 	MaxDiffLines int
 	Milestones   []string
+	// StatusMap maps run states (see StatusMapStates) to tracker status names;
+	// states without an entry leave the ticket status alone.
+	StatusMap map[string]string
+	// ReviewTrigger is ReviewTriggerMention or ReviewTriggerAny; "" means mention.
+	ReviewTrigger string
+}
+
+// Values of Project.ReviewTrigger: which merge request comments start a run.
+const (
+	ReviewTriggerMention = "mention"
+	ReviewTriggerAny     = "any"
+)
+
+// EffectiveReviewTrigger returns ReviewTrigger with the default applied.
+func (p Project) EffectiveReviewTrigger() string {
+	if p.ReviewTrigger == "" {
+		return ReviewTriggerMention
+	}
+	return p.ReviewTrigger
+}
+
+// StatusMapStates lists the run states a StatusMap may key on. Kept in step
+// with the router's state constants by a router test (router imports config).
+func StatusMapStates() []string {
+	return []string{"running", "waiting_for_input", "pushing", "succeeded", "failed", "cancelled"}
 }
 
 // Repo.AllowedPaths are path prefixes ("" = everything). Users empty = all
@@ -76,7 +101,7 @@ type ClassifierRules struct {
 	DefaultRepo    string            `json:"defaultRepo"`
 }
 
-// Roles lists e-mail addresses.
+// Roles lists identities: e-mail addresses or "<system>:<id>" (e.g. "acme:jdoe").
 type Roles struct {
 	Questions []string `json:"questions"`
 	Tasks     []string `json:"tasks"`

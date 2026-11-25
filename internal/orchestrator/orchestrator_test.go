@@ -111,6 +111,8 @@ func (h *fakeHost) OpenPullRequest(_ context.Context, _ string, req *pluginv1.Op
 
 type fakeTracker struct{}
 
+func (fakeTracker) AdapterName(context.Context, string) (string, error) { return "fake", nil }
+
 func (fakeTracker) GetTicket(context.Context, string, string) (*pluginv1.Ticket, error) {
 	return &pluginv1.Ticket{Title: "Fix it"}, nil
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/orchivio/orchestrator/internal/config"
+
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 )
 
 type Trigger string
@@ -29,9 +31,10 @@ type Input struct {
 	Trigger      Trigger
 	PreviousKind string
 	Labels       []string
-	ActorEmail   string
-	// OtherActors wrote further inputs feeding this run; a task needs the tasks role
-	// of every one of them (fail closed), repos stay decided by ActorEmail.
+	// Actors are all identities of the acting user (see Identities).
+	Actors []string
+	// OtherActors wrote further inputs feeding this run, one identity each; a task
+	// needs the tasks role of every one of them (fail closed), repos stay decided by Actors.
 	OtherActors []string
 }
 
@@ -47,7 +50,7 @@ type Decision struct {
 func Classify(p config.Project, in Input) Decision {
 	d := Decision{}
 	d.Kind = classifyKind(p, in, &d)
-	if d.Kind == KindTask && !allContain(p.Roles.Tasks, append([]string{in.ActorEmail}, in.OtherActors...)) {
+	if d.Kind == KindTask && (!hasRole(p.Roles.Tasks, in.Actors) || !allContain(p.Roles.Tasks, in.OtherActors)) {
 		d.Kind = KindQuestion
 		d.Notes = append(d.Notes, NoteDowngraded)
 		d.Reason = append(d.Reason, "downgraded to question: actor lacks tasks role")
@@ -105,7 +108,7 @@ func selectRepos(p config.Project, in Input, d *Decision) {
 	}
 	denied := false
 	for _, slug := range candidates {
-		if repoAllows(p, slug, in.ActorEmail) {
+		if repoAllows(p, slug, in.Actors) {
 			d.Repos = append(d.Repos, slug)
 			continue
 		}
@@ -122,18 +125,50 @@ func selectRepos(p config.Project, in Input, d *Decision) {
 	}
 }
 
-func repoAllows(p config.Project, slug, email string) bool {
+func repoAllows(p config.Project, slug string, actors []string) bool {
 	for _, r := range p.Repos {
 		if r.Slug == slug {
-			return len(r.Users) == 0 || contains(r.Users, email)
+			return len(r.Users) == 0 || hasRole(r.Users, actors)
 		}
 	}
 	return false // unknown slug in config
 }
 
-// HasAnyRole reports whether the email holds the questions or tasks role.
-func HasAnyRole(p config.Project, email string) bool {
-	return contains(p.Roles.Questions, email) || contains(p.Roles.Tasks, email)
+// HasAnyRole reports whether one of the identities holds the questions or tasks role.
+func HasAnyRole(p config.Project, actors []string) bool {
+	return hasRole(p.Roles.Questions, actors) || hasRole(p.Roles.Tasks, actors)
+}
+
+// Identities lists how role entries can name the actor: the e-mail address
+// and system+":"+username, each when set.
+func Identities(system string, a *pluginv1.Actor) []string {
+	var ids []string
+	if a.GetEmail() != "" {
+		ids = append(ids, a.GetEmail())
+	}
+	if a.GetUsername() != "" {
+		ids = append(ids, system+":"+a.GetUsername())
+	}
+	return ids
+}
+
+// FirstMatch returns the first identity found in any role list of p, else the
+// first identity, else "".
+func FirstMatch(p config.Project, actors []string) string {
+	for _, a := range actors {
+		if HasAnyRole(p, []string{a}) {
+			return a
+		}
+	}
+	if len(actors) > 0 {
+		return actors[0]
+	}
+	return ""
+}
+
+// hasRole reports whether any identity is in list.
+func hasRole(list, actors []string) bool {
+	return slices.ContainsFunc(actors, func(a string) bool { return contains(list, a) })
 }
 
 func contains(list []string, s string) bool {

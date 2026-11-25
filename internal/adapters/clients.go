@@ -25,7 +25,8 @@ type conn struct {
 	cc      *grpc.ClientConn
 	mu      sync.Mutex
 	checked bool
-	err     error // non-nil once checked: adapter refused
+	err     error  // non-nil once checked: adapter refused
+	name    string // adapter_name of the capabilities answer
 }
 
 // check calls GetCapabilities until it got an answer; a refusal is cached,
@@ -41,6 +42,7 @@ func (c *conn) check(ctx context.Context, log *slog.Logger, tenant, kind, addr s
 		return fmt.Errorf("capabilities of %s adapter of tenant %s: %w", kind, tenant, err)
 	}
 	c.checked = true
+	c.name = caps.GetAdapterName()
 	if caps.GetContractVersion() != contractVersion {
 		c.err = fmt.Errorf("%s adapter of tenant %s speaks %q, want %q", kind, tenant, caps.GetContractVersion(), contractVersion)
 		log.Error("adapter refused", "tenant", tenant, "kind", kind, "addr", addr, "contract_version", caps.GetContractVersion())
@@ -166,6 +168,28 @@ func (r *Registry) trackerClient(ctx context.Context, tenant string) (pluginv1.T
 	return pluginv1.NewTrackerAdapterClient(cc), &pluginv1.Credential{Data: t.TrackerCredential}, t.TrackerConnectionID, nil
 }
 
+// AdapterName returns the adapter_name the tenant's adapter of kind ("tracker"
+// or "codehost") reported in its capabilities; no credential is needed.
+func (r *Registry) AdapterName(ctx context.Context, tenant, kind string) (string, error) {
+	t, err := r.tenant(tenant)
+	if err != nil {
+		return "", err
+	}
+	ref, mk := t.Tracker, func(cc *grpc.ClientConn) capsClient { return pluginv1.NewTrackerAdapterClient(cc) }
+	if kind == "codehost" {
+		ref, mk = t.CodeHost, func(cc *grpc.ClientConn) capsClient { return pluginv1.NewCodeHostAdapterClient(cc) }
+	}
+	if _, err := r.connFor(ctx, tenant, kind, ref.Address, mk); err != nil {
+		return "", err
+	}
+	r.mu.Lock()
+	c := r.conns[ref.Address]
+	r.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.name, nil
+}
+
 // Tracker returns the router.Tracker over all tenants.
 func (r *Registry) Tracker() *Tracker { return &Tracker{r} }
 
@@ -177,6 +201,11 @@ func (r *Registry) CodeHost() *CodeHost { return &CodeHost{r} }
 
 // Tracker implements router.Tracker.
 type Tracker struct{ r *Registry }
+
+// AdapterName returns the name of the tenant's tracker adapter.
+func (t *Tracker) AdapterName(ctx context.Context, tenant string) (string, error) {
+	return t.r.AdapterName(ctx, tenant, "tracker")
+}
 
 // GetTicket fetches a ticket from the tenant's tracker.
 func (t *Tracker) GetTicket(ctx context.Context, tenant, ref string) (*pluginv1.Ticket, error) {

@@ -71,8 +71,12 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 	if !relevant {
 		return nil
 	}
-	email := ev.GetActor().GetEmail()
-	if !classifier.HasAnyRole(project, email) {
+	system, err := r.tracker.AdapterName(ctx, tenant)
+	if err != nil {
+		return fmt.Errorf("adapter name of tenant %s: %w", tenant, err)
+	}
+	actors := classifier.Identities(system, ev.GetActor())
+	if !classifier.HasAnyRole(project, actors) {
 		if trigger == classifier.TriggerFollowup {
 			slog.Debug("ignoring follow-up comment from actor without role", "ticket", ev.GetTicketRef())
 			return nil
@@ -85,14 +89,14 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 			return fmt.Errorf("create conversation %s: %w", ev.GetTicketRef(), err)
 		}
 	}
-	in := Input{ID: r.newID(), Tenant: tenant, ConversationID: conv.ID, ActorEmail: email, Trigger: trigger, CreatedAt: r.now()}
+	in := Input{ID: r.newID(), Tenant: tenant, ConversationID: conv.ID, ActorEmail: classifier.FirstMatch(project, actors), Trigger: trigger, CreatedAt: r.now()}
 	if ev.GetKind() == pluginv1.TrackerEvent_COMMENTED {
 		in.Body = ev.GetBody()
 	}
 	if err := r.store.AddInput(ctx, in); err != nil {
 		return fmt.Errorf("add input %s: %w", ev.GetTicketRef(), err)
 	}
-	return r.start(ctx, tn, project, conv, trigger, email)
+	return r.start(ctx, tn, project, conv, trigger, actors)
 }
 
 func triggerFor(ev *pluginv1.TrackerEvent, hasConversation bool) (classifier.Trigger, bool) {
@@ -129,11 +133,11 @@ func (r *Router) StartFollowUp(ctx context.Context, conversationID uuid.UUID) er
 	if !ok {
 		return fmt.Errorf("follow-up %s: project %s not configured", conv.TicketRef, conv.Project)
 	}
-	return r.start(ctx, tn, project, conv, classifier.TriggerFollowup, open[len(open)-1].ActorEmail)
+	return r.start(ctx, tn, project, conv, classifier.TriggerFollowup, []string{open[len(open)-1].ActorEmail})
 }
 
 // start defers while a run is busy, resumes a waiting run or creates a new one.
-func (r *Router) start(ctx context.Context, tn config.Tenant, p config.Project, conv *Conversation, trigger classifier.Trigger, email string) error {
+func (r *Router) start(ctx context.Context, tn config.Tenant, p config.Project, conv *Conversation, trigger classifier.Trigger, actors []string) error {
 	active, err := r.store.ActiveRun(ctx, conv.ID)
 	if err != nil {
 		return fmt.Errorf("active run %s: %w", conv.TicketRef, err)
@@ -159,7 +163,7 @@ func (r *Router) start(ctx context.Context, tn config.Tenant, p config.Project, 
 		err = r.setState(ctx, run, StateClassifying)
 	}
 	if err == nil {
-		err = r.classify(ctx, run, last, p, trigger, email)
+		err = r.classify(ctx, run, last, p, trigger, actors)
 	}
 	if err != nil {
 		return r.fail(ctx, run, err)
@@ -180,7 +184,7 @@ func (r *Router) fail(ctx context.Context, run *Run, cause error) error {
 	return cause
 }
 
-func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project, trigger classifier.Trigger, email string) error {
+func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project, trigger classifier.Trigger, actors []string) error {
 	ref := run.TicketRef
 	ticket, err := r.tracker.GetTicket(ctx, run.Tenant, ref)
 	if err != nil {
@@ -202,7 +206,7 @@ func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project,
 		}
 	}
 	d := classifier.Classify(p, classifier.Input{Trigger: trigger, PreviousKind: previousKind, Labels: ticket.GetLabels(),
-		ActorEmail: email, OtherActors: others})
+		Actors: actors, OtherActors: others})
 	run.Kind, run.Repos = d.Kind, d.Repos
 	payload := map[string]any{"kind": d.Kind, "repos": d.Repos, "reason": d.Reason, "notes": d.Notes}
 	if err := r.store.AppendEvent(ctx, run.Tenant, run.ID, eventRunClassified, payload); err != nil {

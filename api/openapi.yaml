@@ -454,8 +454,8 @@ components:
       type: object
       additionalProperties: false
       properties:
-        questions: {type: array, items: {type: string}, description: E-mail addresses}
-        tasks: {type: array, items: {type: string}, description: E-mail addresses}
+        questions: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<id> identities, e.g. jira:jdoe"}
+        tasks: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<id> identities, e.g. jira:jdoe"}
     Project:
       type: object
       additionalProperties: false
@@ -470,6 +470,12 @@ components:
         roles: {$ref: "#/components/schemas/Roles"}
         maxDiffLines: {type: integer}
         milestones: {type: array, items: {type: string}}
+        statusMap:
+          type: object
+          description: Tracker status name per run state; states without an entry leave the status alone
+          propertyNames: {enum: [running, waiting_for_input, pushing, succeeded, failed, cancelled]}
+          additionalProperties: {type: string, minLength: 1}
+        reviewTrigger: {type: string, enum: [mention, any], default: mention}
         version: {type: integer, format: int64, readOnly: true}
         createdAt: {type: string, format: date-time, readOnly: true}
         updatedAt: {type: string, format: date-time, readOnly: true}
