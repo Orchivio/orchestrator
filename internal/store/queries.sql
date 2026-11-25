@@ -212,3 +212,12 @@ INSERT INTO oauth_states (hash, tenant_slug, adapter, kind, created_at, expires_
 UPDATE oauth_states SET used_at = sqlc.arg(now)::timestamptz
 WHERE hash = $1 AND used_at IS NULL AND expires_at > sqlc.arg(now)::timestamptz
 RETURNING tenant_slug, adapter, kind;
+
+-- name: ListProjectRuns :many
+SELECT * FROM runs
+WHERE tenant_id = @tenant_id AND project_id = @project_id
+  AND (@ticket::text = '' OR ticket_ref = @ticket)
+  AND (@state::text = '' OR state = @state)
+  AND (NOT @has_cursor::bool OR (created_at, id) < (@cursor_at::timestamptz, @cursor_id::uuid))
+ORDER BY created_at DESC, id DESC
+LIMIT @max_rows;

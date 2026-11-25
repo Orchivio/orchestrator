@@ -1125,6 +1125,75 @@ func (q *Queries) ListProfiles(ctx context.Context, tenantSlug string) ([]Profil
 	return items, nil
 }
 
+const listProjectRuns = `-- name: ListProjectRuns :many
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id FROM runs
+WHERE tenant_id = $1 AND project_id = $2
+  AND ($3::text = '' OR ticket_ref = $3)
+  AND ($4::text = '' OR state = $4)
+  AND (NOT $5::bool OR (created_at, id) < ($6::timestamptz, $7::uuid))
+ORDER BY created_at DESC, id DESC
+LIMIT $8
+`
+
+type ListProjectRunsParams struct {
+	TenantID  string
+	ProjectID *uuid.UUID
+	Ticket    string
+	State     string
+	HasCursor bool
+	CursorAt  time.Time
+	CursorID  uuid.UUID
+	MaxRows   int32
+}
+
+func (q *Queries) ListProjectRuns(ctx context.Context, arg ListProjectRunsParams) ([]Run, error) {
+	rows, err := q.db.Query(ctx, listProjectRuns,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Ticket,
+		arg.State,
+		arg.HasCursor,
+		arg.CursorAt,
+		arg.CursorID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Run
+	for rows.Next() {
+		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ConversationID,
+			&i.Project,
+			&i.TicketRef,
+			&i.Kind,
+			&i.State,
+			&i.Repos,
+			&i.Branch,
+			&i.Prompt,
+			&i.Result,
+			&i.PrUrls,
+			&i.SessionID,
+			&i.LeaseOwner,
+			&i.LeaseUntil,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjects = `-- name: ListProjects :many
 SELECT id, tenant_slug, tracker_adapter, tracker_key, name, profile_id, spec, version, created_at, updated_at, deleted_at FROM projects WHERE tenant_slug = $1 AND deleted_at IS NULL ORDER BY tracker_key
 `

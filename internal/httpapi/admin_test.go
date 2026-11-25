@@ -25,6 +25,7 @@ const (
 
 type env struct {
 	t     *testing.T
+	st    *memStore
 	h     http.Handler
 	token string
 }
@@ -51,8 +52,10 @@ func newEnv(t *testing.T) *env {
 			t.Fatal(err)
 		}
 	}
-	return newEnvWith(t, admin.NewService(st, map[string]string{"linear": "a:1", "github": "b:2"}, box, &fakeConnector{}, "",
+	e := newEnvWith(t, admin.NewService(st, map[string]string{"linear": "a:1", "github": "b:2"}, box, &fakeConnector{}, "",
 		time.Now, uuid.New, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	e.st = st
+	return e
 }
 
 func newEnvWith(t *testing.T, svc *admin.Service) *env {

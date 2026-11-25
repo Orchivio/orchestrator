@@ -109,11 +109,7 @@ func run(parent context.Context, log *slog.Logger) error {
 	}
 	gs := grpc.NewServer()
 	workerv1.RegisterWorkerServiceServer(gs, grpcapi.NewWorker(orch))
-	mux := http.NewServeMux()
-	mux.Handle("/api/v1/", httpapi.NewAdmin(svc, log))
-	mux.Handle("GET /oauth/callback/{adapter}", httpapi.NewCallback(svc, log))
-	mux.Handle("/", httpapi.NewTimeline(db))
-	hs := &http.Server{Addr: httpAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: httpAddr, Handler: newMux(svc, log), ReadHeaderTimeout: 10 * time.Second}
 
 	errc := make(chan error, 2)
 	background.Add(3)
@@ -247,4 +243,12 @@ func runCommand(ctx context.Context, args []string, out io.Writer, log *slog.Log
 	}
 	_, err = fmt.Fprintln(out, plaintext)
 	return err
+}
+
+// newMux serves the admin API and the OAuth callback; everything else is 404.
+func newMux(svc *admin.Service, log *slog.Logger) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/api/v1/", httpapi.NewAdmin(svc, log))
+	mux.Handle("GET /oauth/callback/{adapter}", httpapi.NewCallback(svc, log))
+	return mux
 }

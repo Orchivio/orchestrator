@@ -18,8 +18,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/orchivio/orchestrator/internal/admin"
 	"github.com/orchivio/orchestrator/internal/classifier"
-	"github.com/orchivio/orchestrator/internal/httpapi"
 	"github.com/orchivio/orchestrator/internal/orchestrator"
 	"github.com/orchivio/orchestrator/internal/router"
 	"github.com/orchivio/orchestrator/internal/store/db"
@@ -31,9 +31,8 @@ var migrations embed.FS
 const agentAuthor = "Orchivio"
 
 var (
-	_ router.Store          = (*Store)(nil)
-	_ orchestrator.Store    = (*Store)(nil)
-	_ httpapi.TimelineStore = (*Store)(nil)
+	_ router.Store       = (*Store)(nil)
+	_ orchestrator.Store = (*Store)(nil)
 )
 
 // Store persists conversations, inputs, runs and events in Postgres.
@@ -232,10 +231,10 @@ func (s *Store) AppendEvent(ctx context.Context, tenant string, runID uuid.UUID,
 	return s.q.AppendEvent(ctx, db.AppendEventParams{TenantID: tenant, RunID: runID, Type: typ, Payload: raw, At: s.now()})
 }
 
-func (s *Store) ListEvents(ctx context.Context, runID uuid.UUID) ([]httpapi.Event, error) {
+func (s *Store) ListEvents(ctx context.Context, runID uuid.UUID) ([]admin.RunEvent, error) {
 	rows, err := s.q.ListEvents(ctx, runID)
-	return mapRows(rows, err, func(e db.Event) httpapi.Event {
-		return httpapi.Event{Type: e.Type, Payload: e.Payload, At: e.At.UTC()}
+	return mapRows(rows, err, func(e db.Event) admin.RunEvent {
+		return admin.RunEvent{Type: e.Type, Payload: e.Payload, At: e.At.UTC()}
 	})
 }
 

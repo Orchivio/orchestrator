@@ -164,6 +164,33 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "412": {$ref: "#/components/responses/PreconditionFailed"}
+  /tenants/{slug}/projects/{id}/runs:
+    parameters: [{$ref: "#/components/parameters/Slug"}, {$ref: "#/components/parameters/Id"}]
+    get:
+      summary: List a project's runs, newest first
+      operationId: listRuns
+      parameters:
+        - {name: ticket, in: query, required: false, schema: {type: string}, description: Only runs for this ticket}
+        - {name: state, in: query, required: false, schema: {type: string}, description: Only runs in this state}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+        - {name: before, in: query, required: false, schema: {type: string}, description: Opaque cursor, the next value of the previous page}
+      responses:
+        "200": {$ref: "#/components/responses/RunListOK"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /tenants/{slug}/projects/{id}/runs/{runId}:
+    parameters:
+      - {$ref: "#/components/parameters/Slug"}
+      - {$ref: "#/components/parameters/Id"}
+      - {name: runId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: Get a run with its events
+      operationId: getRun
+      responses:
+        "200": {$ref: "#/components/responses/RunOK"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
   /tenants/{slug}/connections:
     parameters: [{$ref: "#/components/parameters/Slug"}]
     get:
@@ -282,7 +309,9 @@ components:
     ProfileCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Profile"}}}}
     ProjectOK: {description: Project, headers: {ETag: {$ref: "#/components/headers/ETag"}}, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
     ProjectCreated: {description: Created, headers: {ETag: {$ref: "#/components/headers/ETag"}, Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: "#/components/schemas/Project"}}}}
-    BadRequest: {description: Malformed JSON, unknown field or bad If-Match, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
+    RunListOK: {description: Runs, content: {application/json: {schema: {type: object, required: [runs], properties: {runs: {type: array, items: {$ref: "#/components/schemas/Run"}}, next: {type: string, description: Present only when more runs follow}}}}}}
+    RunOK: {description: Run, content: {application/json: {schema: {type: object, required: [run, events], properties: {run: {$ref: "#/components/schemas/Run"}, events: {type: array, items: {$ref: "#/components/schemas/RunEvent"}}}}}}}
+    BadRequest: {description: Malformed JSON, unknown field, bad If-Match or bad query parameter, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Unauthorized: {description: Missing, invalid, expired or revoked token, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Forbidden: {description: The token may see the resource but not perform this action, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     NotFound: {description: Resource does not exist, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
@@ -292,6 +321,26 @@ components:
     Unavailable: {description: Connections not configured or adapter unreachable, content: {application/problem+json: {schema: {$ref: "#/components/schemas/Problem"}}}}
     Invalid: {description: Validation failed, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ValidationProblem"}}}}
   schemas:
+    Run:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        tenant: {type: string}
+        ticketRef: {type: string}
+        kind: {type: string}
+        state: {type: string}
+        repos: {type: array, items: {type: string}}
+        branch: {type: string}
+        result: {type: string}
+        prUrls: {type: array, items: {type: string}}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    RunEvent:
+      type: object
+      properties:
+        type: {type: string}
+        payload: {}
+        at: {type: string, format: date-time}
     Tenant:
       type: object
       additionalProperties: false

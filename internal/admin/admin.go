@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/orchivio/orchestrator/internal/config"
+	"github.com/orchivio/orchestrator/internal/router"
 )
 
 type Tenant struct {
@@ -164,6 +165,10 @@ type Store interface {
 	CreateProject(ctx context.Context, p Project, trackerAdapter string) (Project, error) // ErrTaken: (adapter, key) ever used
 	UpdateProject(ctx context.Context, p Project, ifVersion int64) (Project, error)
 	DeleteProject(ctx context.Context, tenant string, id uuid.UUID, ifVersion int64) error // ErrInUse if unfinished runs
+	// ListProjectRuns returns up to limit runs with project_id = projectID, newest first, strictly after the cursor.
+	ListProjectRuns(ctx context.Context, tenant string, projectID uuid.UUID, f RunFilter, after *RunCursor, limit int) ([]router.Run, error)
+	// GetProjectRun returns the run and its events; ErrNotFound unless the run belongs to the project.
+	GetProjectRun(ctx context.Context, tenant string, projectID, runID uuid.UUID) (router.Run, []RunEvent, error)
 	CreateToken(ctx context.Context, t Token, hash []byte) (Token, error)
 	ListTokens(ctx context.Context) ([]Token, error)             // includes revoked, newest first
 	RevokeToken(ctx context.Context, id uuid.UUID) error         // ErrNotFound
