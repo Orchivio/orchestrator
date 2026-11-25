@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -367,5 +368,31 @@ func TestHistoryKeepsAgentQuestionBeforeAnswer(t *testing.T) {
 	}
 	if !reflect.DeepEqual(hist, want) {
 		t.Fatalf("History = %+v\nwant %+v", hist, want)
+	}
+}
+
+func TestInputActorIdentitiesRoundTrip(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	c := newConversation(t, s)
+	add := func(actors []string) {
+		in := router.Input{ID: uuid.New(), Tenant: c.Tenant, ConversationID: c.ID, ActorEmail: "a@b.de", Actors: actors,
+			Trigger: "assigned", CreatedAt: base}
+		if err := s.AddInput(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add([]string{"a@b.de", "acme:jdoe"})
+	add(nil)
+	got, err := s.OpenInputs(ctx, c.ID)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("OpenInputs = %v, %v", got, err)
+	}
+	ids := map[int][]string{0: got[0].Identities(), 1: got[1].Identities()}
+	withIDs, without := 0, 1
+	if len(got[0].Actors) == 0 {
+		withIDs, without = 1, 0
+	}
+	if !slices.Equal(ids[withIDs], []string{"a@b.de", "acme:jdoe"}) || len(got[without].Actors) != 0 || !slices.Equal(ids[without], []string{"a@b.de"}) {
+		t.Fatalf("identities = %v", ids)
 	}
 }

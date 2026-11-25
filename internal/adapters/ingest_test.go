@@ -482,12 +482,10 @@ func TestRegistryAdapterNameOfCodeHostIsCachedWithConnection(t *testing.T) {
 			t.Fatalf("AdapterName = %q, %v", got, err)
 		}
 	}
-	if n := capsClientCalls(&capsCalls); n != 1 {
+	if n := capsCalls.Load(); n != 1 {
 		t.Fatalf("GetCapabilities called %d times, want 1", n)
 	}
 }
-
-func capsClientCalls(c *atomic.Int32) int32 { return c.Load() }
 
 func TestRegistryAdapterNameIsCachedWithConnection(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))

@@ -123,7 +123,7 @@ func (s *Store) CreateConversation(ctx context.Context, c router.Conversation) e
 
 func (s *Store) AddInput(ctx context.Context, in router.Input) error {
 	return s.q.AddInput(ctx, db.AddInputParams{
-		ID: in.ID, TenantID: in.Tenant, ConversationID: in.ConversationID, ActorEmail: in.ActorEmail,
+		ID: in.ID, TenantID: in.Tenant, ConversationID: in.ConversationID, ActorEmail: in.ActorEmail, ActorIds: nonNilStrings(in.Actors),
 		Body: in.Body, Trigger: string(in.Trigger), RunID: in.RunID, CreatedAt: in.CreatedAt, FromAgent: in.FromAgent})
 }
 
@@ -274,8 +274,16 @@ func toConversation(c db.Conversation) router.Conversation {
 	return router.Conversation{ID: c.ID, Tenant: c.TenantID, Project: c.Project, TicketRef: c.TicketRef, CreatedAt: c.CreatedAt.UTC()}
 }
 
+// nonNilStrings keeps a nil slice from becoming SQL NULL (the column is NOT NULL).
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 func toInput(i db.Input) router.Input {
-	return router.Input{ID: i.ID, Tenant: i.TenantID, ConversationID: i.ConversationID, ActorEmail: i.ActorEmail,
+	return router.Input{ID: i.ID, Tenant: i.TenantID, ConversationID: i.ConversationID, ActorEmail: i.ActorEmail, Actors: i.ActorIds,
 		Body: i.Body, Trigger: classifier.Trigger(i.Trigger), RunID: i.RunID, CreatedAt: i.CreatedAt.UTC(), FromAgent: i.FromAgent}
 }
 

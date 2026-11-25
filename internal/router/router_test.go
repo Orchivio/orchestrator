@@ -593,15 +593,18 @@ func TestHandleKeepsTaskWhenEmailOnlyHoldsQuestionsRole(t *testing.T) {
 
 func TestStartFollowUpAllowsRepoViaSystemIdentity(t *testing.T) {
 	f, ev := identityFixture(t)
+	p := &f.r.cfg.Current().Tenants["acme"].Projects[0]
+	p.Roles = config.Roles{Questions: []string{"jira:jdoe"}, Tasks: []string{"mixed@example.com"}} // role and repo held by different identities
 	handle(t, f, ev)
+	followUp := &pluginv1.TrackerEvent{ExternalId: "e2", Kind: pluginv1.TrackerEvent_COMMENTED, TicketRef: "ORC-12", ProjectKey: "ORC",
+		Actor: ev.Actor, Body: "more"}
+	handle(t, f, followUp) // run still active: input stays open
 	f.s.runs[0].State = StateSucceeded
-	f.s.inputs = append(f.s.inputs, &Input{ID: uuid.New(), Tenant: "acme", ConversationID: f.s.convs[0].ID,
-		ActorEmail: classifier.FirstMatch(f.r.cfg.Current().Tenants["acme"].Projects[0], classifier.Identities("jira", ev.Actor)), Body: "more"})
 	if err := f.r.StartFollowUp(context.Background(), f.s.convs[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	last := f.s.runs[len(f.s.runs)-1]
-	if last.Kind != classifier.KindTask || len(last.Repos) != 1 || last.Repos[0] != "soemii/playground" {
-		t.Fatalf("follow-up run = %+v", last)
+	if len(f.s.runs) != 2 || last.Kind != classifier.KindTask || len(last.Repos) != 1 || last.Repos[0] != "soemii/playground" {
+		t.Fatalf("follow-up run = %+v (runs %d)", last, len(f.s.runs))
 	}
 }

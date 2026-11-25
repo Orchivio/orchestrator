@@ -47,8 +47,8 @@ func (q *Queries) ActiveRun(ctx context.Context, conversationID uuid.UUID) (Run,
 }
 
 const addInput = `-- name: AddInput :exec
-INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, actor_ids, body, trigger, run_id, created_at, from_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `
 
 type AddInputParams struct {
@@ -56,6 +56,7 @@ type AddInputParams struct {
 	TenantID       string
 	ConversationID uuid.UUID
 	ActorEmail     string
+	ActorIds       []string
 	Body           string
 	Trigger        string
 	RunID          *uuid.UUID
@@ -69,6 +70,7 @@ func (q *Queries) AddInput(ctx context.Context, arg AddInputParams) error {
 		arg.TenantID,
 		arg.ConversationID,
 		arg.ActorEmail,
+		arg.ActorIds,
 		arg.Body,
 		arg.Trigger,
 		arg.RunID,
@@ -1056,7 +1058,7 @@ func (q *Queries) ListFinishedRuns(ctx context.Context, conversationID uuid.UUID
 }
 
 const listInputs = `-- name: ListInputs :many
-SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent FROM inputs WHERE conversation_id = $1 ORDER BY created_at, id
+SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent, actor_ids FROM inputs WHERE conversation_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListInputs(ctx context.Context, conversationID uuid.UUID) ([]Input, error) {
@@ -1078,6 +1080,7 @@ func (q *Queries) ListInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 			&i.RunID,
 			&i.CreatedAt,
 			&i.FromAgent,
+			&i.ActorIds,
 		); err != nil {
 			return nil, err
 		}
@@ -1324,7 +1327,7 @@ func (q *Queries) MarkInbound(ctx context.Context, arg MarkInboundParams) (int64
 }
 
 const openInputs = `-- name: OpenInputs :many
-SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent FROM inputs WHERE conversation_id = $1 AND run_id IS NULL
+SELECT id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent, actor_ids FROM inputs WHERE conversation_id = $1 AND run_id IS NULL
 ORDER BY created_at, id
 `
 
@@ -1347,6 +1350,7 @@ func (q *Queries) OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]I
 			&i.RunID,
 			&i.CreatedAt,
 			&i.FromAgent,
+			&i.ActorIds,
 		); err != nil {
 			return nil, err
 		}

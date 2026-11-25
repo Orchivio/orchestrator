@@ -89,7 +89,7 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 			return fmt.Errorf("create conversation %s: %w", ev.GetTicketRef(), err)
 		}
 	}
-	in := Input{ID: r.newID(), Tenant: tenant, ConversationID: conv.ID, ActorEmail: classifier.FirstMatch(project, actors), Trigger: trigger, CreatedAt: r.now()}
+	in := Input{ID: r.newID(), Tenant: tenant, ConversationID: conv.ID, ActorEmail: classifier.FirstMatch(project, actors), Actors: actors, Trigger: trigger, CreatedAt: r.now()}
 	if ev.GetKind() == pluginv1.TrackerEvent_COMMENTED {
 		in.Body = ev.GetBody()
 	}
@@ -133,7 +133,7 @@ func (r *Router) StartFollowUp(ctx context.Context, conversationID uuid.UUID) er
 	if !ok {
 		return fmt.Errorf("follow-up %s: project %s not configured", conv.TicketRef, conv.Project)
 	}
-	return r.start(ctx, tn, project, conv, classifier.TriggerFollowup, []string{open[len(open)-1].ActorEmail})
+	return r.start(ctx, tn, project, conv, classifier.TriggerFollowup, open[len(open)-1].Identities())
 }
 
 // start defers while a run is busy, resumes a waiting run or creates a new one.
@@ -194,9 +194,9 @@ func (r *Router) classify(ctx context.Context, run, last *Run, p config.Project,
 	if err != nil {
 		return fmt.Errorf("open inputs %s: %w", ref, err)
 	}
-	others := make([]string, 0, len(open))
+	others := make([][]string, 0, len(open))
 	for _, in := range open {
-		others = append(others, in.ActorEmail)
+		others = append(others, in.Identities())
 	}
 	previousKind := ""
 	if last != nil {

@@ -33,9 +33,10 @@ type Input struct {
 	Labels       []string
 	// Actors are all identities of the acting user (see Identities).
 	Actors []string
-	// OtherActors wrote further inputs feeding this run, one identity each; a task
-	// needs the tasks role of every one of them (fail closed), repos stay decided by Actors.
-	OtherActors []string
+	// OtherActors wrote further inputs feeding this run, the identities of each
+	// actor as one list; a task needs the tasks role of every actor through any
+	// of its identities (fail closed), repos stay decided by Actors.
+	OtherActors [][]string
 }
 
 type Decision struct {
@@ -183,8 +184,8 @@ func contains(list []string, s string) bool {
 	return slices.ContainsFunc(list, func(x string) bool { return strings.EqualFold(x, s) })
 }
 
-func allContain(list, emails []string) bool {
-	return !slices.ContainsFunc(emails, func(e string) bool { return !contains(list, e) })
+func allContain(list []string, actors [][]string) bool {
+	return !slices.ContainsFunc(actors, func(a []string) bool { return !hasRole(list, a) })
 }
 
 func hasAny(labels, wanted []string) bool {

@@ -13,8 +13,8 @@ INSERT INTO conversations (id, tenant_id, project, ticket_ref, created_at)
 VALUES ($1, $2, $3, $4, $5);
 
 -- name: AddInput :exec
-INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, actor_ids, body, trigger, run_id, created_at, from_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: OpenInputs :many
 SELECT * FROM inputs WHERE conversation_id = $1 AND run_id IS NULL

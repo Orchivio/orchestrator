@@ -44,11 +44,26 @@ type Input struct {
 	// ActorEmail holds the identity of the actor that matched a role: an e-mail
 	// address or "<system>:<id>". The column keeps its historic name.
 	ActorEmail string
-	Body       string
-	Trigger    classifier.Trigger
-	RunID      *uuid.UUID
-	CreatedAt  time.Time
-	FromAgent  bool
+	// Actors are all identities of the actor; empty on rows from before they
+	// were stored, see Identities.
+	Actors    []string
+	Body      string
+	Trigger   classifier.Trigger
+	RunID     *uuid.UUID
+	CreatedAt time.Time
+	FromAgent bool
+}
+
+// Identities returns all identities of the input's actor, falling back to
+// ActorEmail for rows that stored none.
+func (in Input) Identities() []string {
+	if len(in.Actors) > 0 {
+		return in.Actors
+	}
+	if in.ActorEmail == "" {
+		return nil
+	}
+	return []string{in.ActorEmail}
 }
 
 // Run is one agent execution. Project holds the tracker key of the project.
