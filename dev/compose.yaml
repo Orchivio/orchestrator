@@ -28,7 +28,7 @@ services:
       ORCHIVIO_HTTP_ADDR: 0.0.0.0:8088
       ORCHIVIO_PUBLIC_URL: http://localhost:8088
     ports:
-      - "127.0.0.1:8088:8088" # timeline and admin API (plain HTTP, localhost only); gRPC stays inside the stack
+      - "127.0.0.1:8088:8088" # admin API incl. runs (plain HTTP, localhost only); gRPC stays inside the stack
     depends_on:
       postgres: { condition: service_healthy }
       adapter-linear: { condition: service_started }

@@ -75,7 +75,6 @@ func run(parent context.Context, log *slog.Logger) error {
 	defer cancel()
 	// insecure gRPC, bind localhost; mTLS before remote workers.
 	grpcAddr, httpAddr := env("ORCHIVIO_GRPC_ADDR", "127.0.0.1:7070"), env("ORCHIVIO_HTTP_ADDR", "127.0.0.1:8088")
-	publicURL := env("ORCHIVIO_PUBLIC_URL", defaultPublicURL)
 
 	db, svc, connReg, err := openService(ctx, log)
 	if err != nil {
@@ -99,9 +98,9 @@ func run(parent context.Context, log *slog.Logger) error {
 	defer background.Wait() // runs before reg.Close and db.Close
 	defer cancel()
 
-	rep := reporter.New(func(t string) reporter.TrackerClient { return reg.TrackerFor(t) }, cfg, publicURL)
+	rep := reporter.New(func(t string) reporter.TrackerClient { return reg.TrackerFor(t) }, cfg)
 	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
-	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, defaultLease, publicURL)
+	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, defaultLease)
 
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
@@ -109,11 +108,7 @@ func run(parent context.Context, log *slog.Logger) error {
 	}
 	gs := grpc.NewServer()
 	workerv1.RegisterWorkerServiceServer(gs, grpcapi.NewWorker(orch))
-	mux := http.NewServeMux()
-	mux.Handle("/api/v1/", httpapi.NewAdmin(svc, log))
-	mux.Handle("GET /oauth/callback/{adapter}", httpapi.NewCallback(svc, log))
-	mux.Handle("/", httpapi.NewTimeline(db))
-	hs := &http.Server{Addr: httpAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: httpAddr, Handler: newMux(svc, log), ReadHeaderTimeout: 10 * time.Second}
 
 	errc := make(chan error, 2)
 	background.Add(3)
@@ -247,4 +242,12 @@ func runCommand(ctx context.Context, args []string, out io.Writer, log *slog.Log
 	}
 	_, err = fmt.Fprintln(out, plaintext)
 	return err
+}
+
+// newMux serves the admin API and the OAuth callback; everything else is 404.
+func newMux(svc *admin.Service, log *slog.Logger) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/api/v1/", httpapi.NewAdmin(svc, log))
+	mux.Handle("GET /oauth/callback/{adapter}", httpapi.NewCallback(svc, log))
+	return mux
 }

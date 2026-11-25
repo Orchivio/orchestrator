@@ -1,8 +1,13 @@
 package main
 
 import (
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 const validKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
@@ -24,5 +29,13 @@ func TestOpenBoxRequiresSecretKey(t *testing.T) {
 	}
 	if b, err := openBox(lookup(map[string]string{"ORCHIVIO_SECRET_KEY_REF": "env://OTHER", "OTHER": validKey})); err != nil || b == nil {
 		t.Fatalf("ref: err = %v", err)
+	}
+}
+
+func TestOpenRunsRouteIsGone(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newMux(nil, slog.Default()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/runs/"+uuid.NewString(), nil))
+	if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "ticketRef") {
+		t.Errorf("code = %d, body %s", rec.Code, rec.Body)
 	}
 }

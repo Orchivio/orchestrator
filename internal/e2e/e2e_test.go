@@ -45,7 +45,6 @@ import (
 )
 
 const (
-	publicURL     = "http://timeline.test"
 	userEmail     = "dev@example.com"
 	workerID      = "w1"
 	repoSlug      = "acme/playground"
@@ -334,9 +333,9 @@ func setup(t *testing.T) *env {
 	reg := adapters.NewRegistry(cfg, log)
 	t.Cleanup(reg.Close)
 	reg.SetDialer(dialer)
-	rep := reporter.New(func(tn string) reporter.TrackerClient { return reg.TrackerFor(tn) }, cfg, publicURL)
+	rep := reporter.New(func(tn string) reporter.TrackerClient { return reg.TrackerFor(tn) }, cfg)
 	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
-	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, time.Minute, publicURL)
+	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, time.Minute)
 	lisW := serve(t, func(s *grpc.Server) { workerv1.RegisterWorkerServiceServer(s, grpcapi.NewWorker(orch)) })
 
 	done := make(chan struct{})
@@ -483,6 +482,62 @@ func (e *env) reportAndComplete(t *testing.T, a *workerv1.RunAssignment, req *wo
 	}
 }
 
+// get sends an authenticated GET to the admin API and decodes a 200 response into out.
+func (e *env) get(t *testing.T, path string, out any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, e.admin.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+e.token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200", path, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// assertRunReadable fetches the run named in the ticket comment through the runs API.
+func (e *env) assertRunReadable(t *testing.T, runID string) {
+	t.Helper()
+	var projects []struct {
+		ID string `json:"id"`
+	}
+	e.get(t, "/api/v1/tenants/acme/projects", &projects)
+	if len(projects) != 1 {
+		t.Fatalf("projects = %v, want exactly one", projects)
+	}
+	base := "/api/v1/tenants/acme/projects/" + projects[0].ID + "/runs"
+	var one struct {
+		Run struct {
+			ID string `json:"id"`
+		} `json:"run"`
+		Events []json.RawMessage `json:"events"`
+	}
+	e.get(t, base+"/"+runID, &one)
+	if one.Run.ID != runID || len(one.Events) == 0 {
+		t.Fatalf("run %q with %d events, want id %s and at least one event", one.Run.ID, len(one.Events), runID)
+	}
+	var list struct {
+		Runs []struct {
+			ID string `json:"id"`
+		} `json:"runs"`
+	}
+	e.get(t, base, &list)
+	for _, r := range list.Runs {
+		if r.ID == runID {
+			return
+		}
+	}
+	t.Fatalf("run %s missing from %v", runID, list.Runs)
+}
+
 func hasComment(e *env, ref, substr string) func() bool {
 	return func() bool {
 		for _, c := range e.tracker.commentsFor(ref) {
@@ -548,7 +603,7 @@ func TestEndToEndWithFakes(t *testing.T) {
 	e := setup(t)
 	e.provision("ORC")
 
-	t.Run("question gets an answer comment with timeline link", func(t *testing.T) {
+	t.Run("question gets an answer comment with run id", func(t *testing.T) {
 		e.send(pluginv1.TrackerEvent_COMMENTED, "ORC-1", "@Orchivio Was steht in der README?", true)
 		a := e.lease(t)
 		if a.GetKind() != "question" {
@@ -556,7 +611,8 @@ func TestEndToEndWithFakes(t *testing.T) {
 		}
 		e.reportAndComplete(t, a, &workerv1.CompleteRunRequest{Outcome: workerv1.CompleteRunRequest_ANSWERED, Text: "Die README ist leer."})
 		eventually(t, "answer comment", hasComment(e, "ORC-1", "Die README ist leer."))
-		eventually(t, "timeline link", hasComment(e, "ORC-1", publicURL+"/runs/"+a.GetRunId()))
+		eventually(t, "run id", hasComment(e, "ORC-1", "Run-ID: `"+a.GetRunId()+"`"))
+		e.assertRunReadable(t, a.GetRunId())
 	})
 
 	t.Run("task opens a pull request and links it in the ticket", func(t *testing.T) {

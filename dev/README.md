@@ -108,7 +108,7 @@ ORCHIVIO_VERSION=1.2.0 dev/run-all.sh  # eine veröffentlichte Version
 dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im Volume
 ```
 
-`run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur der HTTP-Port (`127.0.0.1:8088`) ist vom Rechner aus erreichbar: Timeline und Admin-API (`/api/v1`, Bearer-Token über unverschlüsseltes HTTP, daher nur lokal); gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
+`run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur der HTTP-Port (`127.0.0.1:8088`) ist vom Rechner aus erreichbar: Admin-API inkl. Runs (`/api/v1`, Bearer-Token über unverschlüsseltes HTTP, daher nur lokal); gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
 
 ## Bauen und Veröffentlichen
 
@@ -119,21 +119,23 @@ Jedes Repo baut in GitHub Actions (`.github/workflows/ci.yml`), trunk-based:
 - Tag `vX.Y.Z`: Images `X.Y.Z`, `X.Y` und `latest`.
 - Contract: Tag `contract/vX.Y.Z` im Orchestrator-Repo veröffentlicht das Go-Modul `github.com/orchivio/orchestrator/contract`; Dependabot schlägt das Update in den anderen Repos vor. Lokal überschreibt `go.work` die Version, so dass Änderungen am Contract sofort überall greifen.
 
-## Logs und Timelines
+## Logs und Runs
 
 - Logs: `podman compose -f dev/compose.yaml logs -f [orchestrator|worker|adapter-linear|adapter-github|proxy]`.
-- Timeline eines Runs als JSON: `http://localhost:8088/runs/<run-id>`. Der Link steht in jedem Meilenstein-Kommentar im Ticket.
+- Projekt-ID ermitteln: `curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/acme/projects` liefert die Projekte mit ihrer `id` (`<project-id>` unten).
+- Runs ansehen (Bearer-Token nötig, neueste zuerst; Filter `ticket`, `state`, `limit`, `before`): `curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/acme/projects/<project-id>/runs`
+- Einzelner Run mit Events: `curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/acme/projects/<project-id>/runs/<run-id>`. Die Run-ID steht in jedem Meilenstein-Kommentar im Ticket und im PR-Text.
 
 ## Manuelle Checkliste
 
-- [ ] Linear-Ticket im Team `ORC`, Kommentar „@Orchivio Was steht in der README?“ ergibt eine Antwort im Ticket; der Timeline-Link öffnet JSON.
+- [ ] Linear-Ticket im Team `ORC`, Kommentar „@Orchivio Was steht in der README?“ ergibt eine Antwort im Ticket; die Run-ID im Kommentar lässt sich über die Runs-API abrufen.
 - [ ] Ticket Orchivio zuweisen, Kommentar „Füge einen Abschnitt Kontakt in die README ein“ ergibt einen PR in `soemii/orchivio-playground` auf einem Branch `orchivio/orc-…`.
 - [ ] Eine nicht konfigurierte Person erwähnt `@Orchivio` oder weist das Ticket Orchivio zu: Das ergibt den Hinweis „Rolle fehlt“, es startet kein Run. Ein einfacher Kommentar ohne Erwähnung von ihr wird still ignoriert (kein Hinweis).
 - [ ] Unklare Aufgabe ergibt eine Rückfrage im Ticket; deine Antwort startet einen neuen Lauf mit Verlauf.
 
 ## Bekannte Grenzen des Durchstichs
 
-- Keine OIDC-Absicherung der Timeline (nur an `127.0.0.1` gebunden).
+- Keine OIDC-Absicherung der API (nur an `127.0.0.1` gebunden).
 - gRPC ohne TLS und ohne Authentifizierung (Server, Adapter standardmäßig nur an `127.0.0.1` gebunden); mTLS vor entfernten Workern.
 - Keine Kommentare im PR-Review.
 - Kein Resume und keine Snapshots: Jede Antwort startet einen neuen Lauf.

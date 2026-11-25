@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"slices"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/orchivio/orchestrator/internal/admin"
+	"github.com/orchivio/orchestrator/internal/router"
 )
 
 // memStore is an in-memory admin.Store; slugs and keys stay taken after deletion.
@@ -24,12 +26,14 @@ type memStore struct {
 	hashes   map[string]uuid.UUID
 	conns    map[uuid.UUID]*memConn
 	states   map[string]*memState
+	runs     []router.Run
+	events   map[uuid.UUID][]admin.RunEvent
 }
 
 func newMemStore() *memStore {
 	return &memStore{tenants: map[string]admin.Tenant{}, deleted: map[string]bool{}, profiles: map[uuid.UUID]admin.Profile{},
 		projects: map[uuid.UUID]admin.Project{}, keys: map[string]bool{}, adapter: map[uuid.UUID]string{}, hashes: map[string]uuid.UUID{},
-		conns: map[uuid.UUID]*memConn{}, states: map[string]*memState{}}
+		conns: map[uuid.UUID]*memConn{}, states: map[string]*memState{}, events: map[uuid.UUID][]admin.RunEvent{}}
 }
 
 func (m *memStore) ListTenants(context.Context) ([]admin.Tenant, error) {
@@ -432,4 +436,37 @@ func (m *memStore) ConsumeOAuthState(_ context.Context, hash []byte, now time.Ti
 	}
 	st.used = true
 	return st.tenant, st.adapter, st.kind, nil
+}
+
+func (m *memStore) addRun(r router.Run, events ...admin.RunEvent) {
+	m.runs = append(m.runs, r)
+	m.events[r.ID] = events
+}
+
+func (m *memStore) ListProjectRuns(_ context.Context, tenant string, projectID uuid.UUID, f admin.RunFilter, after *admin.RunCursor, limit int) ([]router.Run, error) {
+	var out []router.Run
+	for _, r := range m.runs {
+		if r.Tenant != tenant || r.ProjectID != projectID || f.Ticket != "" && r.TicketRef != f.Ticket || f.State != "" && r.State != f.State {
+			continue
+		}
+		if after == nil || r.CreatedAt.Before(after.CreatedAt) || r.CreatedAt.Equal(after.CreatedAt) && bytes.Compare(r.ID[:], after.ID[:]) < 0 {
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, func(a, b router.Run) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		return bytes.Compare(b.ID[:], a.ID[:])
+	})
+	return out[:min(limit, len(out))], nil
+}
+
+func (m *memStore) GetProjectRun(_ context.Context, tenant string, projectID, runID uuid.UUID) (router.Run, []admin.RunEvent, error) {
+	for _, r := range m.runs {
+		if r.ID == runID && r.Tenant == tenant && r.ProjectID == projectID {
+			return r, m.events[runID], nil
+		}
+	}
+	return router.Run{}, nil, admin.ErrNotFound
 }
