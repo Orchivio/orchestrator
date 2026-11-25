@@ -71,7 +71,7 @@ missing_links=()
 for pair in tracker:linear codehost:github; do
   kind="${pair%%:*}" adapter="${pair##*:}"
   if [[ "$(jq -r --arg k "$kind" '[.[] | select(.kind == $k and .status == "active")] | length' <<<"$connections")" == 0 ]]; then
-    url="$(call POST "/tenants/$tenant/connections/$adapter/authorize" '{}' | jq -r .url)"
+    url="$(call POST "/tenants/$tenant/connections/$adapter/authorize" '{}' | jq -er .url)"
     missing_links+=("$adapter: $url")
   fi
 done
