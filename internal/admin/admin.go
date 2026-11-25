@@ -48,6 +48,8 @@ var (
 	ErrVersionMismatch = errors.New("version mismatch") // 412
 	ErrTaken           = errors.New("already taken")    // store: slug or tracker key ever used
 	ErrConflict        = errors.New("conflict")         // 409: external id connected to another tenant
+	// ErrProjectsExist is the ErrInUse of a tracker connection: the tenant's projects need its workspace.
+	ErrProjectsExist = fmt.Errorf("tenant has projects: %w", ErrInUse)
 )
 
 // ValidationError is the 422 case; Fields names every invalid field.
@@ -171,6 +173,9 @@ type Store interface {
 	ListConnections(ctx context.Context, tenant string) ([]Connection, error)               // live only
 	ListAllActiveConnections(ctx context.Context) ([]Connection, []SealedCredential, error) // live + active
 	GetConnection(ctx context.Context, tenant string, id uuid.UUID) (Connection, error)
+	// LastTrackerExternalID is the external id of the tenant's most recent tracker
+	// connection, deleted ones included; "" if it never had one.
+	LastTrackerExternalID(ctx context.Context, tenant string) (string, error)
 	ConnectionCredential(ctx context.Context, id uuid.UUID) (SealedCredential, error)
 	// SaveConnection inserts, or reconnects the tenant's live row with the same
 	// (adapter, external id). ErrConflict if another tenant holds that external id;

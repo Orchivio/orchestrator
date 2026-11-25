@@ -835,6 +835,19 @@ func (q *Queries) LastRun(ctx context.Context, conversationID uuid.UUID) (Run, e
 	return i, err
 }
 
+const lastTrackerExternalID = `-- name: LastTrackerExternalID :one
+SELECT external_id FROM connections WHERE tenant_slug = $1 AND kind = 'tracker'
+ORDER BY deleted_at IS NULL DESC, created_at DESC LIMIT 1
+`
+
+// Deleted rows count too: a tenant's projects stay bound to the workspace it last connected.
+func (q *Queries) LastTrackerExternalID(ctx context.Context, tenantSlug string) (string, error) {
+	row := q.db.QueryRow(ctx, lastTrackerExternalID, tenantSlug)
+	var external_id string
+	err := row.Scan(&external_id)
+	return external_id, err
+}
+
 const leaseNext = `-- name: LeaseNext :one
 UPDATE runs SET state='running', lease_owner=$1, lease_until=$2, updated_at=$3
 WHERE id = (SELECT id FROM runs

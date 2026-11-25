@@ -173,28 +173,34 @@ func (s *Service) consumeState(ctx context.Context, adapter, state string) (tena
 }
 
 // switchTracker saves a tracker connection, replacing one to another
-// workspace atomically. Refused while the tenant has live projects: their
-// tickets belong to the old workspace.
+// workspace atomically. A workspace other than the last one connected (even
+// if that connection was deleted) is refused while the tenant has live
+// projects: their tickets belong to the old workspace.
 func (s *Service) switchTracker(ctx context.Context, c Connection, cred SealedCredential) (Connection, error) {
-	conns, err := s.store.ListConnections(ctx, c.TenantSlug)
+	last, err := s.store.LastTrackerExternalID(ctx, c.TenantSlug)
 	if err != nil {
 		return Connection{}, err
 	}
-	for _, old := range conns {
-		if old.Kind != KindTracker || old.ExternalID == c.ExternalID {
-			continue
-		}
-		projects, err := s.store.ListProjects(ctx, c.TenantSlug)
-		if err != nil {
+	if last != "" && last != c.ExternalID {
+		if err := s.requireNoProjects(ctx, c.TenantSlug); err != nil {
 			return Connection{}, err
-		}
-		if len(projects) > 0 {
-			return Connection{}, fmt.Errorf("tenant %s has projects on tracker connection %s: %w", c.TenantSlug, old.ID, ErrInUse)
 		}
 	}
 	// ponytail: the replaced credential is not revoked; revoking first would break the old
 	// connection if the save fails, and the provider call cannot join the transaction.
 	return s.store.ReplaceTrackerConnection(ctx, c.TenantSlug, c, cred)
+}
+
+// requireNoProjects is ErrProjectsExist while the tenant has live projects.
+func (s *Service) requireNoProjects(ctx context.Context, tenant string) error {
+	projects, err := s.store.ListProjects(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	if len(projects) > 0 {
+		return fmt.Errorf("tenant %s has %d projects on its tracker workspace: %w", tenant, len(projects), ErrProjectsExist)
+	}
+	return nil
 }
 
 func (s *Service) ListConnections(ctx context.Context, tenant string) ([]Connection, error) {
@@ -218,11 +224,17 @@ func (s *Service) GetConnection(ctx context.Context, tenant string, id uuid.UUID
 }
 
 // DeleteConnection asks the adapter to revoke the credential (best effort,
-// failures are logged) and soft-deletes the connection.
+// failures are logged) and soft-deletes the connection. A tracker connection
+// stays while the tenant has projects.
 func (s *Service) DeleteConnection(ctx context.Context, tenant string, id uuid.UUID) error {
 	c, err := s.GetConnection(ctx, tenant, id)
 	if err != nil {
 		return err
+	}
+	if c.Kind == KindTracker {
+		if err := s.requireNoProjects(ctx, tenant); err != nil {
+			return err
+		}
 	}
 	if err := s.disconnect(ctx, c); err != nil {
 		s.log.Warn("disconnect at adapter failed; deleting anyway", "connection", c.ID, "adapter", c.Adapter, "error", err)

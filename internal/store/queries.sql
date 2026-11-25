@@ -173,6 +173,11 @@ SET label = EXCLUDED.label, status = EXCLUDED.status, key_id = EXCLUDED.key_id, 
 WHERE connections.tenant_slug = EXCLUDED.tenant_slug
 RETURNING *;
 
+-- Deleted rows count too: a tenant's projects stay bound to the workspace it last connected.
+-- name: LastTrackerExternalID :one
+SELECT external_id FROM connections WHERE tenant_slug = $1 AND kind = 'tracker'
+ORDER BY deleted_at IS NULL DESC, created_at DESC LIMIT 1;
+
 -- name: DeleteOtherTrackerConnections :exec
 UPDATE connections SET deleted_at = sqlc.arg(deleted_at), updated_at = sqlc.arg(deleted_at)
 WHERE tenant_slug = sqlc.arg(tenant_slug) AND kind = 'tracker' AND deleted_at IS NULL

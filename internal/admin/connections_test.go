@@ -363,3 +363,40 @@ func TestConnectionsUnavailableWithoutBoxOrConnector(t *testing.T) {
 		t.Fatalf("callback: %v", err)
 	}
 }
+
+func TestTrackerWorkspaceKeptWhileProjectsExist(t *testing.T) {
+	e := newConnEnv(t)
+	tracker, err := e.connect(t, "linear", "ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.connect(t, "github", "inst1"); err != nil {
+		t.Fatal(err)
+	}
+	proj, err := e.svc.CreateProject(ctx, admin.Project{TenantSlug: "acme", Name: "Res", TrackerKey: "RES", ProfileID: e.store.profileID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteConnection(ctx, "acme", tracker.ID); !errors.Is(err, admin.ErrProjectsExist) || len(e.conn.disconnected) != 0 {
+		t.Fatalf("delete tracker with project: err = %v disconnected %d", err, len(e.conn.disconnected))
+	}
+	if err := e.store.DeleteConnection(ctx, "acme", tracker.ID); err != nil { // e.g. deleted before this rule existed
+		t.Fatal(err)
+	}
+	if _, err := e.connect(t, "linear", "ws2"); !errors.Is(err, admin.ErrInUse) {
+		t.Fatalf("other workspace after delete: err = %v", err)
+	}
+	same, err := e.connect(t, "linear", "ws1")
+	if err != nil {
+		t.Fatalf("same workspace after delete: %v", err)
+	}
+	if err := e.svc.DeleteProject(ctx, "acme", proj.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteConnection(ctx, "acme", same.ID); err != nil {
+		t.Fatalf("delete tracker without projects: %v", err)
+	}
+	if _, err := e.connect(t, "linear", "ws2"); err != nil {
+		t.Fatalf("other workspace without projects: %v", err)
+	}
+}

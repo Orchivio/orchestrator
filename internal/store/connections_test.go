@@ -356,3 +356,25 @@ func claimOne(t *testing.T, s *Store, id uuid.UUID) admin.Connection {
 	t.Fatalf("connection %s not claimed", id)
 	return admin.Connection{}
 }
+
+func TestLastTrackerExternalIDIncludesDeleted(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	a := newTenant(t, s)
+	if got, err := s.LastTrackerExternalID(ctx, a.Slug); err != nil || got != "" {
+		t.Fatalf("none: %q, %v", got, err)
+	}
+	if _, err := s.SaveConnection(ctx, connIn(a.Slug, admin.KindCodeHost, "github", uuid.NewString()), cred); err != nil {
+		t.Fatal(err)
+	}
+	ws := uuid.NewString()
+	c, err := s.SaveConnection(ctx, connIn(a.Slug, admin.KindTracker, "linear", ws), cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteConnection(ctx, a.Slug, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LastTrackerExternalID(ctx, a.Slug); err != nil || got != ws {
+		t.Fatalf("deleted: %q, %v; want %q", got, err, ws)
+	}
+}

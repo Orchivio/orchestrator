@@ -284,6 +284,8 @@ func (a *adminAPI) fail(w http.ResponseWriter, err error) {
 		writeProblem(w, http.StatusForbidden, "Forbidden", "This token may not perform this action.")
 	case errors.Is(err, admin.ErrNotFound):
 		writeProblem(w, http.StatusNotFound, "Not Found", "The resource does not exist.")
+	case errors.Is(err, admin.ErrProjectsExist):
+		writeProblem(w, http.StatusConflict, "Conflict", "The tenant still has projects on this tracker workspace; delete its projects first.")
 	case errors.Is(err, admin.ErrInUse):
 		writeProblem(w, http.StatusConflict, "Conflict", "The resource is still in use.")
 	case errors.Is(err, admin.ErrConflict):

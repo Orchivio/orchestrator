@@ -301,6 +301,22 @@ func (m *memStore) ConnectionCredential(_ context.Context, id uuid.UUID) (admin.
 	return admin.SealedCredential{}, admin.ErrNotFound
 }
 
+func (m *memStore) LastTrackerExternalID(_ context.Context, tenant string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var last *memConn
+	for _, mc := range m.conns {
+		if mc.c.TenantSlug == tenant && mc.c.Kind == admin.KindTracker && (last == nil || !mc.dead && last.dead ||
+			mc.dead == last.dead && mc.c.CreatedAt.After(last.c.CreatedAt)) {
+			last = mc
+		}
+	}
+	if last == nil {
+		return "", nil
+	}
+	return last.c.ExternalID, nil
+}
+
 func (m *memStore) SaveConnection(_ context.Context, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

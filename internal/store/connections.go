@@ -38,6 +38,14 @@ func (s *Store) ConnectionCredential(ctx context.Context, id uuid.UUID) (admin.S
 	return admin.SealedCredential{KeyID: row.KeyID, Data: row.Credential}, nil
 }
 
+func (s *Store) LastTrackerExternalID(ctx context.Context, tenant string) (string, error) {
+	id, err := s.q.LastTrackerExternalID(ctx, tenant)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
 func (s *Store) SaveConnection(ctx context.Context, c admin.Connection, cred admin.SealedCredential) (admin.Connection, error) {
 	return s.saveConnection(ctx, s.q, c, cred)
 }

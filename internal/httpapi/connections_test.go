@@ -235,3 +235,38 @@ func TestConnectionsNeverExposeCredential(t *testing.T) {
 func jsonUnmarshal(rec *httptest.ResponseRecorder, dst any) error {
 	return json.Unmarshal(rec.Body.Bytes(), dst)
 }
+
+func TestTrackerConnectionKeptWhileProjectsExist(t *testing.T) {
+	e := newConnEnv(t)
+	e.connect("acme", "linear", "ws1")
+	e.connect("acme", "github", "inst1")
+	prof := e.do("POST", "/api/v1/tenants/acme/profiles", profileBody)
+	project := e.do("POST", "/api/v1/tenants/acme/projects", projectBody(decode(t, prof)["id"].(string), "o/x"))
+	if project.Code != 201 {
+		t.Fatal(project.Code, project.Body.String())
+	}
+	var tracker string
+	for id, mc := range e.store.conns {
+		if mc.c.Kind == admin.KindTracker {
+			tracker = id.String()
+		}
+	}
+	rec := e.do("DELETE", "/api/v1/tenants/acme/connections/"+tracker, "")
+	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "delete its projects first") {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if err := e.store.DeleteConnection(t.Context(), "acme", uuid.MustParse(tracker)); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.connect("acme", "linear", "ws2"); rec.Code != 409 {
+		t.Fatal("other workspace after delete:", rec.Code, rec.Body.String())
+	}
+	if rec := e.do("DELETE", decodeLocation(project), "", "If-Match", `"1"`); rec.Code != 204 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if rec := e.connect("acme", "linear", "ws2"); rec.Code != 200 {
+		t.Fatal("other workspace without projects:", rec.Code, rec.Body.String())
+	}
+}
+
+func decodeLocation(rec *httptest.ResponseRecorder) string { return rec.Header().Get("Location") }
