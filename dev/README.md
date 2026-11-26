@@ -116,25 +116,32 @@ dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im V
 
 ## Live-Test Jira/GitLab
 
-Die Adapter `adapter-jira` und `adapter-gitlab` liegen im Compose-Profil `jira-gitlab`; ohne Profil startet `dev/run-all.sh` genau dieselben Dienste wie bisher. Solange die Adapter-PRs nicht gemergt sind, gibt es die Images nicht auf GHCR: lokal bauen (`ghcr.io/orchivio/adapter-jira:main`, `ghcr.io/orchivio/adapter-gitlab:main` taggen) und mit `ORCHIVIO_PULL=never` starten.
+Die Adapter `adapter-jira` (als `adapter-jira-cloud` und `adapter-jira-dc`) und `adapter-gitlab` liegen im Compose-Profil `jira-gitlab`, Linear und GitHub im Profil `linear-github`. Ist `COMPOSE_PROFILES` nicht gesetzt, nimmt `dev/run-all.sh` `linear-github` und startet genau dieselben Dienste wie bisher; Linear-/GitHub-Variablen verlangt es nur, wenn `linear-github` aktiv ist. Die Images liegen auf GHCR, z. B. mit `ORCHIVIO_VERSION=0.1.1`.
 
-Der Orchestrator kennt die Zusatz-Adapter nur über `ORCHIVIO_EXTRA_ADAPTERS`, das an `ORCHIVIO_ADAPTERS` angehängt wird (führendes Komma). Beides in `dev/.env` (siehe `env.example`) oder in der Umgebung setzen:
+Der Orchestrator kennt die Adapter über `ORCHIVIO_ADAPTERS` (Standard `linear=adapter-linear:7101,github=adapter-github:7201`), an das `ORCHIVIO_EXTRA_ADAPTERS` angehängt wird (führendes Komma). Er wählt Adapter erst bei Bedarf an, nicht laufende Adapter stören also nicht. Alles zusammen (in `dev/.env`, siehe `env.example`, oder in der Umgebung):
 
 ```sh
-export COMPOSE_PROFILES=jira-gitlab
+export COMPOSE_PROFILES=linear-github,jira-gitlab
 export ORCHIVIO_EXTRA_ADAPTERS=,jira-cloud=adapter-jira-cloud:7301,jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401
-ORCHIVIO_PULL=never dev/run-all.sh
+dev/run-all.sh
 ```
+
+Nur Jira und GitLab ohne Linear/GitHub: siehe [Arbeitslaptop](#arbeitslaptop-jira-data-center-und-gitlab). `dev/stop-all.sh` stoppt immer alle Profile.
 
 `JIRA_URL` (nur Data Center) und `GITLAB_URL` stehen in der `.env`. Container `jira-dc` und `gitlab-ce` sind bewusst nicht Teil des Stacks (große Images); es werden bestehende Instanzen genutzt.
 
-`seed.sh` legt zusätzlich den Mandanten `beta` an (Tracker `jira-cloud`, oder `ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc`; Code-Host `gitlab`), verbindet beide per Formular (`POST /api/v1/tenants/beta/connections/{adapter}/form`, Body `{"fields": {...}}`) und legt das Projekt `demo-jira` mit `statusMap` `{"running":"In Progress","succeeded":"In Review","failed":"To Do"}` an. Das passiert nur, wenn `ORCHIVIO_SEED_JIRA_{TOKEN,KEY}` und `ORCHIVIO_SEED_GITLAB_{PATH,TOKEN,REPO}` gesetzt sind (bei `jira-cloud` zusätzlich `ORCHIVIO_SEED_JIRA_{SITE_URL,EMAIL}`; die Formularfelder richten sich nach dem Adapter, bei `jira-dc` nur `token`). Optional: `ORCHIVIO_SEED_JIRA_JQL` setzt den JQL-Filter der Verbindung; `ORCHIVIO_SEED_JIRA_USER` und `ORCHIVIO_SEED_GITLAB_USER` ergänzen die Rollen um `jira:<user>` bzw. `gitlab:<user>` (am besten die ID als `id:<id>`, z. B. `ORCHIVIO_SEED_GITLAB_USER=id:12345`, siehe oben). Rollen werden nur beim Anlegen des Projekts gesetzt. Schlägt beta fehl, gibt `seed.sh` eine Warnung aus und legt `acme` trotzdem an. Tokens stehen nur in der `.env` und werden nie ausgegeben.
+`seed.sh` legt zusätzlich den Mandanten `beta` an (Tracker `jira-cloud`, oder `ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc`; Code-Host `gitlab`), verbindet beide per Formular (`POST /api/v1/tenants/beta/connections/{adapter}/form`, Body `{"fields": {...}}`) und legt das Projekt `demo-jira` mit `statusMap` `{"running":"In Progress","succeeded":"In Review","failed":"To Do"}` an. Das passiert nur, wenn `ORCHIVIO_SEED_JIRA_{TOKEN,KEY}` und `ORCHIVIO_SEED_GITLAB_{PATH,TOKEN,REPO}` gesetzt sind (bei `jira-cloud` zusätzlich `ORCHIVIO_SEED_JIRA_{SITE_URL,EMAIL}`; die Formularfelder richten sich nach dem Adapter, bei `jira-dc` nur `token`). Optional: `ORCHIVIO_SEED_JIRA_JQL` setzt den JQL-Filter der Verbindung; `ORCHIVIO_SEED_JIRA_USER` und `ORCHIVIO_SEED_GITLAB_USER` ergänzen die Rollen um `jira:<user>` bzw. `gitlab:<user>` (am besten die ID als `id:<id>`, z. B. `ORCHIVIO_SEED_GITLAB_USER=id:12345`, siehe oben). Rollen werden nur beim Anlegen des Projekts gesetzt. Schlägt beta fehl, gibt `seed.sh` eine Warnung aus und macht mit `acme` weiter. `acme` (Linear/GitHub) legt `seed.sh` nur an, wenn das Profil `linear-github` aktiv ist; sonst meldet es „Mandant acme übersprungen“. Tokens stehen nur in der `.env` und werden nie ausgegeben.
 
 `adapter-jira-dc` startet ohne `JIRA_URL` nicht und startet im Profil `jira-gitlab` dann in einer Schleife neu. Wer nur Jira Cloud nutzt, stoppt den Container (`podman compose -f dev/compose.yaml stop adapter-jira-dc`); der Rest des Stacks läuft unabhängig davon.
 
 ### Proxy und eigene CA
 
-Die Adapter reichen `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `SSL_CERT_FILE` und `SSL_CERT_DIR` aus der `.env` durch. `SSL_CERT_FILE`/`SSL_CERT_DIR` zeigen auf ein CA-Bundle, das im Container liegen muss (Volume ergänzen, z. B. in einer `compose.override.yaml`). Der Worker braucht für `git` gegen GitLab hinter einer eigenen CA zusätzlich `GIT_SSL_CAINFO` (Pfad des Bundles im Worker bzw. in der Sandbox) sowie bei Bedarf dieselben Proxy-Variablen; sie sind im Compose nicht vorverdrahtet und kommen über eine Override-Datei.
+- `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` gehen an die Jira-/GitLab-Adapter, an `proxy` und an `worker` (dort zusätzlich klein geschrieben für `git`; `orchestrator` und `orchivio-proxy` stehen im Worker immer in `NO_PROXY`, damit gRPC nicht über den Unternehmens-Proxy läuft). Die Sandbox bleibt unberührt, sie spricht nur mit `proxy`.
+- `ORCHIVIO_CA_FILE`: Pfad eines PEM-Bundles auf dem Rechner (unter `$HOME`, weil die Podman-Machine nur das Home-Verzeichnis einbindet; die Datei muss existieren). Compose bindet es schreibgeschützt als `/etc/orchivio/ca.pem` in `adapter-jira-cloud`, `adapter-jira-dc`, `adapter-gitlab`, `proxy` und `worker` ein und setzt dort `SSL_CERT_FILE=/etc/orchivio/ca.pem` (im Worker auch `GIT_SSL_CAINFO`). Ohne `ORCHIVIO_CA_FILE` wird `/dev/null` eingebunden und `SSL_CERT_FILE` bleibt leer, die Images nutzen ihre eigenen CAs.
+- Vorrang: `ORCHIVIO_CA_FILE` bestimmt `SSL_CERT_FILE`; ein `SSL_CERT_FILE` aus `.env` oder Umgebung wird nicht mehr durchgereicht (es war ein Pfad auf dem Rechner, nicht im Container). Wer einen anderen Pfad braucht, setzt ihn in einer `compose.override.yaml`; die gewinnt. `SSL_CERT_DIR` wird weiter durchgereicht.
+- `SSL_CERT_FILE` (Go) und `GIT_SSL_CAINFO` (git) **ersetzen** die System-CAs. Das Bundle muss daher Unternehmens-CA **und** System-CAs enthalten, sonst scheitern z. B. Aufrufe an `api.anthropic.com` (siehe Arbeitslaptop, Schritt 4).
+- Grenze `proxy`: Die Anthropic-Aufrufe (Reverse-Proxy, Go-Standardtransport) gehen über `HTTPS_PROXY`. CONNECT-Tunnel der Sandbox (Allowlist) wählt `proxy` dagegen direkt an; ohne direkten Internetzugang funktionieren sie nicht.
+- `worker` (`git` über HTTPS gegen GitLab): Ab worker-podman 0.1.1 reicht der Worker `GIT_SSL_CAINFO`/`GIT_SSL_CAPATH` an `git` weiter (alle anderen `GIT_*` bleiben gesperrt); das `git` im Image ignoriert `SSL_CERT_FILE`, daher setzt Compose im Worker `GIT_SSL_CAINFO`. Proxy-Variablen kommen ebenfalls an. Mit 0.1.0 kommt die CA nicht bei `git` an, deshalb mindestens `ORCHIVIO_VERSION=0.1.1` verwenden.
 
 ### Checkliste (je Jira Data Center, Jira Cloud, GitLab CE/SaaS)
 
@@ -146,6 +153,95 @@ Die Adapter reichen `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `SSL_CERT_FILE` und
 - [ ] Folge-Run auf demselben Branch: neuer Commit im bestehenden MR.
 - [ ] Tokens widerrufen (Verbindung löschen): Die Projekt-Tokenliste in GitLab ist leer.
 - [ ] Ergebnis (Datum, Instanz, Auffälligkeiten) hier eintragen.
+
+## Arbeitslaptop: Jira Data Center und GitLab
+
+Für einen Rechner mit nur Jira Data Center und selbst betriebenem GitLab hinter einem HTTP-Proxy mit eigener CA. Linear und GitHub sind nicht nötig. Schritte, die hier mit „nicht verifiziert“ markiert sind, sind nicht auf einem echten Firmenrechner getestet.
+
+1. **Firmenrichtlinie klären.** Orchivio schickt Ticket-Text und Quellcode des Repos an Anthropic (Claude). Vorher klären, ob das für das Projekt erlaubt ist.
+
+2. **Voraussetzungen.** Podman mit Podman-Machine (mindestens 8 GB Speicher), `podman compose` (getestet mit dem Provider docker-compose v2.33; `stop-all.sh` nutzt `COMPOSE_PROFILES='*'`), `git`, `jq`, `curl`, `openssl`. Go ist nur für die Tests nötig.
+
+3. **Podman-Machine: Proxy und CA.** Die Images kommen von `ghcr.io` und `docker.io`; das Ziehen passiert in der VM, sie braucht also Proxy und Unternehmens-CA.
+   - Proxy: Die Variablen vor `podman machine init` in der Shell setzen. Podman übernimmt `HTTP_PROXY`, `HTTPS_PROXY` und `NO_PROXY` aus der Shell in die VM. Nicht verifiziert: ob ein späteres `podman machine stop && podman machine start` geänderte Werte übernimmt; im Zweifel die VM neu anlegen oder die Werte in der VM (`podman machine ssh`) unter `/etc/systemd/system.conf.d/` und `/etc/profile.d/` prüfen:
+
+     ```sh
+     export HTTP_PROXY=http://proxy.example.com:3128 HTTPS_PROXY=http://proxy.example.com:3128
+     export NO_PROXY=localhost,127.0.0.1,.example.com
+     podman machine init --memory 8192
+     podman machine start
+     podman machine ssh 'env | grep -i _proxy'   # prüfen
+     ```
+
+     Läuft der Proxy lokal auf dem Mac (z. B. `127.0.0.1:3128`), muss die VM ihn über `host.containers.internal` erreichen; ob Podman das umschreibt, ist nicht verifiziert.
+   - CA in der VM vertrauen (Fedora CoreOS; das Home-Verzeichnis ist in der VM unter gleichem Pfad eingebunden, `/etc` bleibt über Neustarts erhalten, geht aber bei `podman machine rm` verloren):
+
+     ```sh
+     podman machine ssh "sudo cp $HOME/.orchivio/corp-ca.pem /etc/pki/ca-trust/source/anchors/corp-ca.pem && sudo update-ca-trust"
+     podman pull ghcr.io/orchivio/orchestrator:0.1.1   # prüfen
+     ```
+
+4. **CA-Bundle bauen.** Die Unternehmens-CA als PEM besorgen (IT oder Schlüsselbund, z. B. `security find-certificate -a -c "<Name der CA>" -p /Library/Keychains/System.keychain > ~/.orchivio/corp-ca.pem`) und mit den System-CAs zusammenfügen, weil `SSL_CERT_FILE` und `GIT_SSL_CAINFO` die System-CAs ersetzen:
+
+   ```sh
+   mkdir -p ~/.orchivio
+   cat ~/.orchivio/corp-ca.pem /etc/ssl/cert.pem > ~/.orchivio/ca-bundle.pem
+   openssl x509 -in ~/.orchivio/corp-ca.pem -noout -subject -enddate      # CA lesbar?
+   curl -sS -o /dev/null -w '%{http_code}\n' --cacert ~/.orchivio/ca-bundle.pem https://gitlab.example.com  # Bundle passt?
+   ```
+
+5. **Nur das Orchestrator-Repo klonen.** Es enthält `dev/`; alle Dienste kommen als Images.
+
+   ```sh
+   git clone https://github.com/orchivio/orchestrator.git && cd orchestrator
+   cp dev/env.example dev/.env
+   ```
+
+6. **`dev/.env` ausfüllen.** Die Linear-/GitHub-Werte aus `env.example` können leer bleiben oder entfernt werden.
+
+   ```sh
+   ORCHIVIO_SECRET_KEY=...            # openssl rand -base64 32
+   ORCHIVIO_BOOTSTRAP_TOKEN=orv_...   # siehe env.example
+   ANTHROPIC_API_KEY=sk-ant-...       # oder CLAUDE_CODE_OAUTH_TOKEN
+   ORCHIVIO_VERSION=0.1.1
+   COMPOSE_PROFILES=jira-gitlab
+   ORCHIVIO_ADAPTERS=jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401
+   JIRA_URL=https://jira.example.com
+   GITLAB_URL=https://gitlab.example.com
+   HTTPS_PROXY=http://proxy.example.com:3128
+   HTTP_PROXY=http://proxy.example.com:3128
+   NO_PROXY=localhost,127.0.0.1,.example.com   # interne Hosts (Jira, GitLab) meist hier
+   ORCHIVIO_CA_FILE=/Users/<du>/.orchivio/ca-bundle.pem
+   # Seed: Mandant beta (ORCHIVIO_SEED_TENANT=acme kann stehen bleiben, acme wird übersprungen)
+   ORCHIVIO_SEED_EMAIL=du@example.com
+   ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc
+   ORCHIVIO_SEED_JIRA_TOKEN=...       # PAT des Jira-Nutzers von Orchivio (Schritt 8)
+   ORCHIVIO_SEED_JIRA_KEY=ABC         # Jira-Projektschlüssel
+   ORCHIVIO_SEED_GITLAB_PATH=group/project
+   ORCHIVIO_SEED_GITLAB_TOKEN=glpat-...   # Project Access Token (Schritt 7)
+   ORCHIVIO_SEED_GITLAB_REPO=group/project
+   ORCHIVIO_SEED_JIRA_USER=id:JIRAUSER12345   # dein DC-Benutzerschlüssel
+   ORCHIVIO_SEED_GITLAB_USER=id:12345         # deine GitLab-User-ID
+   ```
+
+   Den DC-Benutzerschlüssel liefert `curl -H "Authorization: Bearer <dein PAT>" $JIRA_URL/rest/api/2/myself | jq -r .key`, die GitLab-User-ID `curl -H "PRIVATE-TOKEN: <dein PAT>" $GITLAB_URL/api/v4/user | jq .id`.
+
+7. **GitLab: Project Access Token.** Im Projekt Settings, Access Tokens: Rolle **Maintainer**, Scope **`api`**. GitLab legt dafür einen eigenen Bot-Nutzer an, der nur Mitglied dieses einen Projekts ist; damit ist Orchivio auf das Projekt beschränkt. Nicht verifiziert ist, ob dieser Projekt-Bot selbst weitere Project Access Tokens anlegen darf (die Instanz kann das per Einstellung oder Version verbieten). Das ist die erste Prüfung nach dem Start: `GET /tenants/beta/connections` zeigt `active` und ein Run kann pushen; scheitert es, die Logs von `adapter-gitlab` lesen.
+
+8. **Jira: eigener technischer Nutzer empfohlen.** Orchivio ignoriert alles, was sein eigener Nutzer tut (Schutz vor Schleifen). Mit einem eigenen technischen Nutzer (und dessen Personal Access Token) kannst du selbst Tickets zuweisen und kommentieren. Mit deinem eigenen PAT handelt Orchivio als du: Dann muss eine Kollegin oder ein Kollege den Test auslösen (zuweisen, erwähnen) und in den Rollen stehen.
+
+9. **Starten und seeden.**
+
+   ```sh
+   dev/run-all.sh       # zieht die Images, startet, ruft dev/seed.sh auf (legt beta an)
+   curl -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" localhost:8088/api/v1/tenants/beta/connections
+   podman compose -f dev/compose.yaml logs -f adapter-jira-dc adapter-gitlab worker proxy
+   dev/stop-all.sh      # stoppt alles, die Datenbank bleibt
+   ```
+
+   `adapter-jira-cloud` läuft im Profil mit, wird aber ohne Eintrag in `ORCHIVIO_ADAPTERS` nicht genutzt. Beim Klonen und Pushen durch den Worker die Grenze unter [Proxy und eigene CA](#proxy-und-eigene-ca) beachten.
+
+10. **Test durchgehen:** [Checkliste](#checkliste-je-jira-data-center-jira-cloud-gitlab-cesaas) für Jira Data Center und GitLab abhaken.
 
 ## Bauen und Veröffentlichen
 

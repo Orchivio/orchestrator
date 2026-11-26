@@ -14,8 +14,6 @@ fi
 
 : "${ORCHIVIO_BOOTSTRAP_TOKEN:?ORCHIVIO_BOOTSTRAP_TOKEN fehlt (dev/.env)}"
 tenant="${ORCHIVIO_SEED_TENANT:-acme}"
-team_key="${ORCHIVIO_SEED_TEAM_KEY:?ORCHIVIO_SEED_TEAM_KEY fehlt}"
-repo="${ORCHIVIO_SEED_REPO:?ORCHIVIO_SEED_REPO fehlt}"
 email="${ORCHIVIO_SEED_EMAIL:?ORCHIVIO_SEED_EMAIL fehlt}"
 model="${ORCHIVIO_SEED_MODEL:-sonnet}"
 api="${ORCHIVIO_API_URL:-http://localhost:8088/api/v1}"
@@ -124,6 +122,14 @@ set -e
 if ((beta_rc != 0)); then
   echo "Warnung: Mandant beta nicht vollständig angelegt (Exit $beta_rc); acme wird trotzdem angelegt" >&2
 fi
+
+# acme (Linear + GitHub) nur mit Profil linear-github (Standard wie in run-all.sh).
+if [[ ",${COMPOSE_PROFILES:-linear-github}," != *,linear-github,* ]]; then
+  echo "Mandant $tenant übersprungen: Profil linear-github nicht aktiv"
+  exit 0
+fi
+team_key="${ORCHIVIO_SEED_TEAM_KEY:?ORCHIVIO_SEED_TEAM_KEY fehlt}"
+repo="${ORCHIVIO_SEED_REPO:?ORCHIVIO_SEED_REPO fehlt}"
 
 status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" "$api/tenants/$tenant")"

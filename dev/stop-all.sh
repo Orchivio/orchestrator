@@ -4,4 +4,5 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ORCHIVIO_PODMAN_SOCKET=/dev/null ORCHIVIO_WORK_DIR=/tmp podman compose -f "$here/compose.yaml" down
+# COMPOSE_PROFILES='*': alle Profile, auch wenn mit anderen gestartet wurde.
+COMPOSE_PROFILES='*' ORCHIVIO_PODMAN_SOCKET=/dev/null ORCHIVIO_WORK_DIR=/tmp podman compose -f "$here/compose.yaml" down
