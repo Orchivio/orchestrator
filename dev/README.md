@@ -110,6 +110,37 @@ dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im V
 
 `run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur der HTTP-Port (`127.0.0.1:8088`) ist vom Rechner aus erreichbar: Admin-API inkl. Runs (`/api/v1`, Bearer-Token über unverschlüsseltes HTTP, daher nur lokal); gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
 
+## Live-Test Jira/GitLab
+
+Die Adapter `adapter-jira` und `adapter-gitlab` liegen im Compose-Profil `jira-gitlab`; ohne Profil startet `dev/run-all.sh` genau dieselben Dienste wie bisher. Solange die Adapter-PRs nicht gemergt sind, gibt es die Images nicht auf GHCR: lokal bauen (`ghcr.io/orchivio/adapter-jira:main`, `ghcr.io/orchivio/adapter-gitlab:main` taggen) und mit `ORCHIVIO_PULL=never` starten.
+
+Der Orchestrator kennt die Zusatz-Adapter nur über `ORCHIVIO_EXTRA_ADAPTERS`, das an `ORCHIVIO_ADAPTERS` angehängt wird (führendes Komma). Beides in `dev/.env` (siehe `env.example`) oder in der Umgebung setzen:
+
+```sh
+export COMPOSE_PROFILES=jira-gitlab
+export ORCHIVIO_EXTRA_ADAPTERS=,jira-cloud=adapter-jira-cloud:7301,jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401
+ORCHIVIO_PULL=never dev/run-all.sh
+```
+
+`JIRA_URL` (nur Data Center) und `GITLAB_URL` stehen in der `.env`. Container `jira-dc` und `gitlab-ce` sind bewusst nicht Teil des Stacks (große Images); es werden bestehende Instanzen genutzt.
+
+`seed.sh` legt zusätzlich den Mandanten `beta` an (Tracker `jira-cloud`, oder `ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc`; Code-Host `gitlab`), verbindet beide per Formular (`POST /api/v1/tenants/beta/connections/{adapter}/form`, Body `{"fields": {...}}`) und legt das Projekt `demo-jira` mit `statusMap` `{"running":"In Progress","succeeded":"In Review","failed":"To Do"}` an. Das passiert nur, wenn `ORCHIVIO_SEED_JIRA_{TOKEN,KEY}` und `ORCHIVIO_SEED_GITLAB_{PATH,TOKEN,REPO}` gesetzt sind (Jira Cloud zusätzlich `_SITE_URL`, `_EMAIL`). Tokens stehen nur in der `.env` und werden nie ausgegeben.
+
+### Proxy und eigene CA
+
+Die Adapter reichen `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` und `SSL_CERT_FILE` aus der `.env` durch. `SSL_CERT_FILE`/`SSL_CERT_DIR` zeigen auf ein CA-Bundle, das im Container liegen muss (Volume ergänzen, z. B. in einer `compose.override.yaml`). Der Worker braucht für `git` gegen GitLab hinter einer eigenen CA zusätzlich `GIT_SSL_CAINFO` (Pfad des Bundles im Worker bzw. in der Sandbox) sowie bei Bedarf dieselben Proxy-Variablen; sie sind im Compose nicht vorverdrahtet und kommen über eine Override-Datei.
+
+### Checkliste (je Jira Data Center, Jira Cloud, GitLab CE/SaaS)
+
+- [ ] Verbinden: `seed.sh` bzw. Formular-Endpoint; `GET /tenants/beta/connections` zeigt `active`.
+- [ ] Projekt mit `statusMap` angelegt.
+- [ ] Ticket dem Orchivio-Nutzer zuweisen: Run startet, Status wechselt auf „In Progress“.
+- [ ] Run endet mit einem Merge Request; Ticket-Status wechselt auf „In Review“.
+- [ ] Kommentar im MR mit Erwähnung von Orchivio: Antwort bzw. Folge-Run.
+- [ ] Folge-Run auf demselben Branch: neuer Commit im bestehenden MR.
+- [ ] Tokens widerrufen (Verbindung löschen): Die Projekt-Tokenliste in GitLab ist leer.
+- [ ] Ergebnis (Datum, Instanz, Auffälligkeiten) hier eintragen.
+
 ## Bauen und Veröffentlichen
 
 Jedes Repo baut in GitHub Actions (`.github/workflows/ci.yml`), trunk-based:
