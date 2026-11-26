@@ -146,6 +146,11 @@ func (s *Store) LastRun(ctx context.Context, conversationID uuid.UUID) (*router.
 	return runOrNil(row, err)
 }
 
+func (s *Store) FindTaskRunByBranch(ctx context.Context, tenant, repo, branch string) (*router.Run, error) {
+	row, err := s.q.FindTaskRunByBranch(ctx, db.FindTaskRunByBranchParams{TenantID: tenant, Branch: branch, Repo: repo})
+	return runOrNil(row, err)
+}
+
 func (s *Store) GetRun(ctx context.Context, id uuid.UUID) (*router.Run, error) {
 	row, err := s.q.GetRun(ctx, id)
 	return runOrNil(row, err)
@@ -229,6 +234,11 @@ func (s *Store) AppendEvent(ctx context.Context, tenant string, runID uuid.UUID,
 		}
 	}
 	return s.q.AppendEvent(ctx, db.AppendEventParams{TenantID: tenant, RunID: runID, Type: typ, Payload: raw, At: s.now()})
+}
+
+// IssuedCredentialIDs lists the repo credential ids recorded for the run, oldest first.
+func (s *Store) IssuedCredentialIDs(ctx context.Context, runID uuid.UUID) ([]string, error) {
+	return s.q.IssuedCredentialIDs(ctx, runID)
 }
 
 func (s *Store) ListEvents(ctx context.Context, runID uuid.UUID) ([]admin.RunEvent, error) {
@@ -332,3 +342,4 @@ func deref(id *uuid.UUID) uuid.UUID {
 	}
 	return *id
 }
+

@@ -106,6 +106,9 @@ type Store interface {
 	OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]Input, error) // inputs without run, oldest first
 	ActiveRun(ctx context.Context, conversationID uuid.UUID) (*Run, error)     // classifying|queued|running|pushing|waiting_for_input
 	LastRun(ctx context.Context, conversationID uuid.UUID) (*Run, error)
+	// FindTaskRunByBranch returns the newest task run of the tenant on branch
+	// whose repos contain repo; nil, nil if none.
+	FindTaskRunByBranch(ctx context.Context, tenant, repo, branch string) (*Run, error)
 	CreateRun(ctx context.Context, r Run) error
 	UpdateRun(ctx context.Context, r Run) error
 	ClaimInputs(ctx context.Context, conversationID, runID uuid.UUID) error
@@ -122,6 +125,13 @@ type Tracker interface {
 	// SetStatus moves the ticket to the named status; a no-op (nil) when the
 	// adapter does not support status updates.
 	SetStatus(ctx context.Context, tenant, ref, status string) error
+}
+
+// CodeHost names the tenant's code host adapter.
+type CodeHost interface {
+	// AdapterName is the adapter_name the code host adapter reports; it names
+	// the system in "<system>:<id>" role entries and the inbound dedup source.
+	AdapterName(ctx context.Context, tenant string) (string, error)
 }
 
 // Reporter writes milestones and notices back to the ticket.

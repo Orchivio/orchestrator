@@ -140,6 +140,9 @@ func HasAnyRole(p config.Project, actors []string) bool {
 	return hasRole(p.Roles.Questions, actors) || hasRole(p.Roles.Tasks, actors)
 }
 
+// HasTasksRole reports whether one of the identities holds the tasks role.
+func HasTasksRole(p config.Project, actors []string) bool { return hasRole(p.Roles.Tasks, actors) }
+
 // Identities lists how role entries can name the actor: the e-mail address
 // and system+":"+username, each when set.
 func Identities(system string, a *pluginv1.Actor) []string {

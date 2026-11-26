@@ -34,13 +34,14 @@ type Router struct {
 	cfg      *config.Sync
 	store    Store
 	tracker  Tracker
+	codeHost CodeHost
 	reporter Reporter
 	now      func() time.Time
 	newID    func() uuid.UUID
 }
 
-func New(cfg *config.Sync, s Store, t Tracker, r Reporter, now func() time.Time, newID func() uuid.UUID) *Router {
-	return &Router{cfg: cfg, store: s, tracker: t, reporter: r, now: now, newID: newID}
+func New(cfg *config.Sync, s Store, t Tracker, ch CodeHost, r Reporter, now func() time.Time, newID func() uuid.UUID) *Router {
+	return &Router{cfg: cfg, store: s, tracker: t, codeHost: ch, reporter: r, now: now, newID: newID}
 }
 
 // Handle applies one tracker event. Order of the steps is the specification.
@@ -115,6 +116,11 @@ func triggerFor(ev *pluginv1.TrackerEvent, hasConversation bool) (classifier.Tri
 func (r *Router) StartFollowUp(ctx context.Context, conversationID uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.startFollowUp(ctx, conversationID)
+}
+
+// startFollowUp is StartFollowUp with r.mu held.
+func (r *Router) startFollowUp(ctx context.Context, conversationID uuid.UUID) error {
 	open, err := r.store.OpenInputs(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("open inputs %s: %w", conversationID, err)

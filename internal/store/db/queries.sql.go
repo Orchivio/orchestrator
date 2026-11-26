@@ -652,6 +652,44 @@ func (q *Queries) FindConversation(ctx context.Context, arg FindConversationPara
 	return i, err
 }
 
+const findTaskRunByBranch = `-- name: FindTaskRunByBranch :one
+SELECT id, tenant_id, conversation_id, project, ticket_ref, kind, state, repos, branch, prompt, result, pr_urls, session_id, lease_owner, lease_until, created_at, updated_at, project_id FROM runs
+WHERE tenant_id = $1 AND branch = $2 AND kind = 'task' AND repos @> jsonb_build_array($3::text)
+ORDER BY created_at DESC, id LIMIT 1
+`
+
+type FindTaskRunByBranchParams struct {
+	TenantID string
+	Branch   string
+	Repo     string
+}
+
+func (q *Queries) FindTaskRunByBranch(ctx context.Context, arg FindTaskRunByBranchParams) (Run, error) {
+	row := q.db.QueryRow(ctx, findTaskRunByBranch, arg.TenantID, arg.Branch, arg.Repo)
+	var i Run
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ConversationID,
+		&i.Project,
+		&i.TicketRef,
+		&i.Kind,
+		&i.State,
+		&i.Repos,
+		&i.Branch,
+		&i.Prompt,
+		&i.Result,
+		&i.PrUrls,
+		&i.SessionID,
+		&i.LeaseOwner,
+		&i.LeaseUntil,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
 const getConnection = `-- name: GetConnection :one
 SELECT id, tenant_slug, kind, adapter, external_id, label, status, key_id, credential, refresh_after, created_at, updated_at, deleted_at FROM connections WHERE tenant_slug = $1 AND id = $2 AND deleted_at IS NULL
 `
@@ -819,6 +857,31 @@ func (q *Queries) GetTenant(ctx context.Context, slug string) (Tenant, error) {
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const issuedCredentialIDs = `-- name: IssuedCredentialIDs :many
+SELECT (payload->>'credential_id')::text AS credential_id FROM events
+WHERE run_id = $1 AND type = 'credentials_issued' ORDER BY id
+`
+
+func (q *Queries) IssuedCredentialIDs(ctx context.Context, runID uuid.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, issuedCredentialIDs, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var credential_id string
+		if err := rows.Scan(&credential_id); err != nil {
+			return nil, err
+		}
+		items = append(items, credential_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lastRun = `-- name: LastRun :one

@@ -1,5 +1,5 @@
 // Package adapters holds the gRPC clients to the tenants' tracker and code
-// host adapters and the loop that ingests tracker events.
+// host adapters and the loops that ingest their events.
 package adapters
 
 import (
@@ -28,6 +28,7 @@ type conn struct {
 	err     error  // non-nil once checked: adapter refused
 	name    string // adapter_name of the capabilities answer
 	status  bool   // supports_status_update of the capabilities answer
+	reviews bool   // supports_review_events of the capabilities answer
 }
 
 // check calls GetCapabilities until it got an answer; a refusal is cached,
@@ -45,6 +46,7 @@ func (c *conn) check(ctx context.Context, log *slog.Logger, tenant, kind, addr s
 	c.checked = true
 	c.name = caps.GetAdapterName()
 	c.status = caps.GetSupportsStatusUpdate()
+	c.reviews = caps.GetSupportsReviewEvents()
 	if caps.GetContractVersion() != contractVersion {
 		c.err = fmt.Errorf("%s adapter of tenant %s speaks %q, want %q", kind, tenant, caps.GetContractVersion(), contractVersion)
 		log.Error("adapter refused", "tenant", tenant, "kind", kind, "addr", addr, "contract_version", caps.GetContractVersion())
@@ -312,4 +314,19 @@ func (h *CodeHost) OpenPullRequest(ctx context.Context, tenant string, req *plug
 	req.Credentials = creds
 	pr, err := c.OpenPullRequest(ctx, req)
 	return pr, h.r.rejected(ctx, tenant, ids, err)
+}
+
+// AdapterName returns the name of the tenant's code host adapter.
+func (h *CodeHost) AdapterName(ctx context.Context, tenant string) (string, error) {
+	return h.r.AdapterName(ctx, tenant, "codehost")
+}
+
+// RevokeRepoCredentials withdraws repo credentials issued earlier.
+func (h *CodeHost) RevokeRepoCredentials(ctx context.Context, tenant, credentialID string) error {
+	c, creds, ids, err := h.client(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	_, err = c.RevokeRepoCredentials(ctx, &pluginv1.RevokeRepoCredentialsRequest{CredentialId: credentialID, Credentials: creds})
+	return h.r.rejected(ctx, tenant, ids, err)
 }

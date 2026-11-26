@@ -334,7 +334,7 @@ func setup(t *testing.T) *env {
 	t.Cleanup(reg.Close)
 	reg.SetDialer(dialer)
 	rep := reporter.New(func(tn string) reporter.TrackerClient { return reg.TrackerFor(tn) }, cfg)
-	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
+	rt := router.New(cfg, db, reg.Tracker(), reg.CodeHost(), rep, time.Now, uuid.New)
 	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, time.Minute)
 	lisW := serve(t, func(s *grpc.Server) { workerv1.RegisterWorkerServiceServer(s, grpcapi.NewWorker(orch)) })
 

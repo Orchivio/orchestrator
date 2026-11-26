@@ -138,6 +138,20 @@ func (s *fakeStore) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ st
 	return nil
 }
 
+func (s *fakeStore) FindTaskRunByBranch(_ context.Context, tenant, repo, branch string) (*Run, error) {
+	for _, r := range slices.Backward(s.runs) {
+		if r.Tenant == tenant && r.Kind == classifier.KindTask && r.Branch == branch && slices.Contains(r.Repos, repo) {
+			cp := *r
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+type fakeCodeHost struct{}
+
+func (fakeCodeHost) AdapterName(context.Context, string) (string, error) { return "host", nil }
+
 type fakeTracker struct {
 	labels    []string
 	err       error
@@ -184,6 +198,7 @@ type fixture struct {
 	r   *Router
 	s   *fakeStore
 	tr  *fakeTracker
+	ch  *fakeCodeHost
 	rep *fakeReporter
 }
 
@@ -194,6 +209,11 @@ func newFixture(t *testing.T, defaultRepo string) *fixture {
 
 func newFixtureWith(t *testing.T, defaultRepo string, mutate func(*config.Project)) *fixture {
 	t.Helper()
+	return newFixtureFor(t, testConfig(defaultRepo, mutate))
+}
+
+// testConfig is tenant "acme" with project ORC; mutate edits the project.
+func testConfig(defaultRepo string, mutate func(*config.Project)) *config.Config {
 	cfg := &config.Config{Tenants: map[string]config.Tenant{"acme": {
 		Name:     "acme",
 		Tracker:  config.AdapterRef{Name: "linear", Address: "localhost:7101"},
@@ -218,11 +238,16 @@ func newFixtureWith(t *testing.T, defaultRepo string, mutate func(*config.Projec
 		mutate(&tn.Projects[0])
 		cfg.Tenants["acme"] = tn
 	}
+	return cfg
+}
+
+func newFixtureFor(t *testing.T, cfg *config.Config) *fixture {
+	t.Helper()
 	sync, err := config.NewSync(context.Background(), config.Static{Config: cfg}, time.Hour, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{s: &fakeStore{seen: map[string]bool{}}, tr: &fakeTracker{}, rep: &fakeReporter{}}
+	f := &fixture{s: &fakeStore{seen: map[string]bool{}}, tr: &fakeTracker{}, rep: &fakeReporter{}, ch: &fakeCodeHost{}}
 	var n uint64
 	newID := func() uuid.UUID {
 		n++
@@ -233,7 +258,7 @@ func newFixtureWith(t *testing.T, defaultRepo string, mutate func(*config.Projec
 		return id
 	}
 	clock := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
-	f.r = New(sync, f.s, f.tr, f.rep, func() time.Time { clock = clock.Add(time.Minute); return clock }, newID)
+	f.r = New(sync, f.s, f.tr, f.ch, f.rep, func() time.Time { clock = clock.Add(time.Minute); return clock }, newID)
 	return f
 }
 

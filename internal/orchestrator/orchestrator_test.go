@@ -88,8 +88,19 @@ func (f *fakeStore) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ st
 	return nil
 }
 
+func (f *fakeStore) IssuedCredentialIDs(_ context.Context, _ uuid.UUID) ([]string, error) {
+	var ids []string
+	for _, e := range f.events {
+		if e.typ == eventCredentialsIssued {
+			ids = append(ids, e.payload.(map[string]string)["credential_id"])
+		}
+	}
+	return ids, nil
+}
+
 type fakeHost struct {
 	credCalls int
+	revoked   []string
 	prs       []*pluginv1.OpenPullRequestRequest
 	prErr     error
 	failRepo  string
@@ -97,7 +108,11 @@ type fakeHost struct {
 
 func (h *fakeHost) IssueRepoCredentials(context.Context, string, []string, bool) (*pluginv1.RepoCredentials, error) {
 	h.credCalls++
-	return &pluginv1.RepoCredentials{Token: "t"}, nil
+	return &pluginv1.RepoCredentials{Token: "t", CredentialId: "c1"}, nil
+}
+func (h *fakeHost) RevokeRepoCredentials(_ context.Context, _, id string) error {
+	h.revoked = append(h.revoked, id)
+	return nil
 }
 func (h *fakeHost) OpenPullRequest(_ context.Context, _ string, req *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error) {
 	if h.prErr != nil {
@@ -602,5 +617,50 @@ func TestStatusFailureRecordedAndRunContinues(t *testing.T) {
 	}
 	if p := last.payload.(map[string]string); p["state"] != "running" || p["status"] != "In Progress" || p["error"] != "jira 500" {
 		t.Fatalf("payload = %v", p)
+	}
+}
+
+func credentialsThenComplete(t *testing.T, outcome workerv1.CompleteRunRequest_Outcome) *fixture {
+	t.Helper()
+	f := newFixture(t, "question")
+	f.lease(t)
+	if _, err := f.o.Credentials(context.Background(), "w1", f.run.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.complete("w1", outcome, "x", nil); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestCredentialsRevokedAfterComplete(t *testing.T) {
+	succeeded := credentialsThenComplete(t, workerv1.CompleteRunRequest_ANSWERED)
+	failed := credentialsThenComplete(t, workerv1.CompleteRunRequest_FAILED)
+
+	if succeeded.state() != router.StateSucceeded || strings.Join(succeeded.host.revoked, ",") != "c1" {
+		t.Errorf("succeeded: state=%s revoked=%v, want c1", succeeded.state(), succeeded.host.revoked)
+	}
+	if failed.state() != router.StateFailed || strings.Join(failed.host.revoked, ",") != "c1" {
+		t.Errorf("failed: state=%s revoked=%v, want c1", failed.state(), failed.host.revoked)
+	}
+}
+
+func TestCredentialsIssuedEventHoldsOnlyID(t *testing.T) {
+	f := newFixture(t, "question")
+	f.lease(t)
+	if _, err := f.o.Credentials(context.Background(), "w1", f.run.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	last := f.s.events[len(f.s.events)-1]
+	if got, ok := last.payload.(map[string]string); last.typ != eventCredentialsIssued || !ok ||
+		len(got) != 1 || got["credential_id"] != "c1" {
+		t.Fatalf("event = %+v", last)
+	}
+}
+
+func TestCredentialsNotRevokedWhileWaiting(t *testing.T) {
+	f := credentialsThenComplete(t, workerv1.CompleteRunRequest_WAITING)
+	if len(f.host.revoked) != 0 {
+		t.Fatalf("revoked = %v, want none while waiting", f.host.revoked)
 	}
 }
