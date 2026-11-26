@@ -75,7 +75,7 @@ func ApplyStatus(ctx context.Context, cfg *config.Sync, tracker Tracker, events 
 	if err == nil {
 		return
 	}
-	slog.Warn("set ticket status failed", "run", run.ID, "ticket", run.TicketRef, "state", state, "status", status, "err", err)
+	slog.Warn("set ticket status failed", "run", run.ID, "ticket", run.TicketRef, "state", state, "status", status, "err", redact.String(err.Error()))
 	payload := map[string]string{"state": state, "status": status, "error": redact.String(err.Error())}
 	if aerr := events.AppendEvent(ctx, run.Tenant, run.ID, eventStatusFailed, payload); aerr != nil {
 		slog.Error("record status_failed event failed", "run", run.ID, "err", aerr)
