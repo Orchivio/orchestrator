@@ -116,7 +116,7 @@ dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im V
 
 ## Live-Test Jira/GitLab
 
-Die Adapter `adapter-jira` (als `adapter-jira-cloud` und `adapter-jira-dc`) und `adapter-gitlab` liegen im Compose-Profil `jira-gitlab`, Linear und GitHub im Profil `linear-github`. Ist `COMPOSE_PROFILES` nicht gesetzt, nimmt `dev/run-all.sh` `linear-github` und startet genau dieselben Dienste wie bisher; Linear-/GitHub-Variablen verlangt es nur, wenn `linear-github` aktiv ist. Die Images liegen auf GHCR, z. B. mit `ORCHIVIO_VERSION=0.1.0`.
+Die Adapter `adapter-jira` (als `adapter-jira-cloud` und `adapter-jira-dc`) und `adapter-gitlab` liegen im Compose-Profil `jira-gitlab`, Linear und GitHub im Profil `linear-github`. Ist `COMPOSE_PROFILES` nicht gesetzt, nimmt `dev/run-all.sh` `linear-github` und startet genau dieselben Dienste wie bisher; Linear-/GitHub-Variablen verlangt es nur, wenn `linear-github` aktiv ist. Die Images liegen auf GHCR, z. B. mit `ORCHIVIO_VERSION=0.1.1`.
 
 Der Orchestrator kennt die Adapter über `ORCHIVIO_ADAPTERS` (Standard `linear=adapter-linear:7101,github=adapter-github:7201`), an das `ORCHIVIO_EXTRA_ADAPTERS` angehängt wird (führendes Komma). Er wählt Adapter erst bei Bedarf an, nicht laufende Adapter stören also nicht. Alles zusammen (in `dev/.env`, siehe `env.example`, oder in der Umgebung):
 
@@ -141,16 +141,7 @@ Nur Jira und GitLab ohne Linear/GitHub: siehe [Arbeitslaptop](#arbeitslaptop-jir
 - Vorrang: `ORCHIVIO_CA_FILE` bestimmt `SSL_CERT_FILE`; ein `SSL_CERT_FILE` aus `.env` oder Umgebung wird nicht mehr durchgereicht (es war ein Pfad auf dem Rechner, nicht im Container). Wer einen anderen Pfad braucht, setzt ihn in einer `compose.override.yaml`; die gewinnt. `SSL_CERT_DIR` wird weiter durchgereicht.
 - `SSL_CERT_FILE` (Go) und `GIT_SSL_CAINFO` (git) **ersetzen** die System-CAs. Das Bundle muss daher Unternehmens-CA **und** System-CAs enthalten, sonst scheitern z. B. Aufrufe an `api.anthropic.com` (siehe Arbeitslaptop, Schritt 4).
 - Grenze `proxy`: Die Anthropic-Aufrufe (Reverse-Proxy, Go-Standardtransport) gehen über `HTTPS_PROXY`. CONNECT-Tunnel der Sandbox (Allowlist) wählt `proxy` dagegen direkt an; ohne direkten Internetzugang funktionieren sie nicht.
-- Grenze `worker` (`git` über HTTPS gegen GitLab): Der Worker entfernt für `git` alle geerbten `GIT_*`-Variablen (`internal/gitenv` in worker-podman, auch in 0.1.0), `GIT_SSL_CAINFO` kommt also nicht an. Das `git` im Image nutzt libcurl mit GnuTLS und ignoriert `SSL_CERT_FILE`. Proxy-Variablen kommen an. Bis worker-podman `GIT_SSL_CAINFO` durchlässt, das Bundle in einer `dev/compose.override.yaml` über die System-CAs des Workers legen (das Bundle enthält sie ja):
-
-  ```yaml
-  services:
-    worker:
-      volumes:
-        - ${ORCHIVIO_CA_FILE}:/etc/ssl/certs/ca-certificates.crt:ro
-  ```
-
-  `run-all.sh` und `stop-all.sh` lesen nur `dev/compose.yaml`; mit Override von Hand starten: `podman compose -f dev/compose.yaml -f dev/compose.override.yaml up -d` (Variablen wie in `run-all.sh` setzen) oder die Zeile vorübergehend in `dev/compose.yaml` ergänzen. Nicht im Test verifiziert.
+- `worker` (`git` über HTTPS gegen GitLab): Ab worker-podman 0.1.1 reicht der Worker `GIT_SSL_CAINFO`/`GIT_SSL_CAPATH` an `git` weiter (alle anderen `GIT_*` bleiben gesperrt); das `git` im Image ignoriert `SSL_CERT_FILE`, daher setzt Compose im Worker `GIT_SSL_CAINFO`. Proxy-Variablen kommen ebenfalls an. Mit 0.1.0 kommt die CA nicht bei `git` an, deshalb mindestens `ORCHIVIO_VERSION=0.1.1` verwenden.
 
 ### Checkliste (je Jira Data Center, Jira Cloud, GitLab CE/SaaS)
 
@@ -187,7 +178,7 @@ Für einen Rechner mit nur Jira Data Center und selbst betriebenem GitLab hinter
 
      ```sh
      podman machine ssh "sudo cp $HOME/.orchivio/corp-ca.pem /etc/pki/ca-trust/source/anchors/corp-ca.pem && sudo update-ca-trust"
-     podman pull ghcr.io/orchivio/orchestrator:0.1.0   # prüfen
+     podman pull ghcr.io/orchivio/orchestrator:0.1.1   # prüfen
      ```
 
 4. **CA-Bundle bauen.** Die Unternehmens-CA als PEM besorgen (IT oder Schlüsselbund, z. B. `security find-certificate -a -c "<Name der CA>" -p /Library/Keychains/System.keychain > ~/.orchivio/corp-ca.pem`) und mit den System-CAs zusammenfügen, weil `SSL_CERT_FILE` und `GIT_SSL_CAINFO` die System-CAs ersetzen:
@@ -212,7 +203,7 @@ Für einen Rechner mit nur Jira Data Center und selbst betriebenem GitLab hinter
    ORCHIVIO_SECRET_KEY=...            # openssl rand -base64 32
    ORCHIVIO_BOOTSTRAP_TOKEN=orv_...   # siehe env.example
    ANTHROPIC_API_KEY=sk-ant-...       # oder CLAUDE_CODE_OAUTH_TOKEN
-   ORCHIVIO_VERSION=0.1.0
+   ORCHIVIO_VERSION=0.1.1
    COMPOSE_PROFILES=jira-gitlab
    ORCHIVIO_ADAPTERS=jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401
    JIRA_URL=https://jira.example.com
