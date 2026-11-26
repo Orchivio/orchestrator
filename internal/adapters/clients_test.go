@@ -347,3 +347,20 @@ func TestSetStatusUnauthenticatedMarksConnection(t *testing.T) {
 		t.Fatalf("rejected = %v", r)
 	}
 }
+
+func TestRejectedHookRunsDetachedWithDeadline(t *testing.T) {
+	reg, _ := rejectEnv(t, codes.Unauthenticated, nil)
+	bounded := make(chan bool, 1)
+	reg.OnRejected(func(ctx context.Context, _ string, _ uuid.UUID) {
+		_, ok := ctx.Deadline()
+		bounded <- ok && ctx.Err() == nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _ = reg.Tracker().GetTicket(ctx, "acme", "ORC-1")
+
+	if !<-bounded {
+		t.Fatal("hook context must carry a deadline and be live")
+	}
+}

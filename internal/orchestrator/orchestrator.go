@@ -208,7 +208,10 @@ func (o *Orchestrator) revokeIssued(ctx context.Context, run *router.Run) {
 
 func (o *Orchestrator) revoke(ctx context.Context, run *router.Run, ids ...string) {
 	for _, id := range ids {
-		if err := o.codeHost.RevokeRepoCredentials(ctx, run.Tenant, id); err != nil {
+		callCtx, cancel := context.WithTimeout(ctx, router.AdapterCallTimeout)
+		err := o.codeHost.RevokeRepoCredentials(callCtx, run.Tenant, id)
+		cancel()
+		if err != nil {
 			slog.Warn("revoke repo credentials failed", "run", run.ID, "error", err)
 		}
 	}

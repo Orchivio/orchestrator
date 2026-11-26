@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -16,6 +17,9 @@ import (
 const (
 	eventStatusFailed = "status_failed"
 	maxSlugLen        = 40
+	// AdapterCallTimeout bounds adapter calls made outside a request deadline,
+	// so a hanging adapter cannot block a run transition or a cleanup.
+	AdapterCallTimeout = 15 * time.Second
 )
 
 var asciiFold = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss")
@@ -65,7 +69,9 @@ func ApplyStatus(ctx context.Context, cfg *config.Sync, tracker Tracker, events 
 	if !ok {
 		return
 	}
-	err := tracker.SetStatus(ctx, run.Tenant, run.TicketRef, status)
+	callCtx, cancel := context.WithTimeout(ctx, AdapterCallTimeout)
+	err := tracker.SetStatus(callCtx, run.Tenant, run.TicketRef, status)
+	cancel()
 	if err == nil {
 		return
 	}

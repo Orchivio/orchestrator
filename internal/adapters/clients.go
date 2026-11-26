@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -18,7 +19,11 @@ import (
 	"github.com/orchivio/orchestrator/internal/config"
 )
 
-const contractVersion = "plugin.v1"
+const (
+	contractVersion = "plugin.v1"
+	// rejectHookTimeout bounds the needs_reauth hook (DB write and config reload).
+	rejectHookTimeout = 15 * time.Second
+)
 
 // conn is a dialed adapter whose capabilities were checked once.
 type conn struct {
@@ -90,7 +95,10 @@ func (r *Registry) rejected(ctx context.Context, tenant string, ids []uuid.UUID,
 	hook := r.onRejected
 	r.mu.Unlock()
 	if hook != nil {
-		hook(context.WithoutCancel(ctx), tenant, ids[0])
+		// detached so a cancelled request still marks the connection, but bounded
+		hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rejectHookTimeout)
+		defer cancel()
+		hook(hookCtx, tenant, ids[0])
 	}
 	return err
 }

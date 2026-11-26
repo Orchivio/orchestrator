@@ -159,9 +159,14 @@ type fakeTracker struct {
 	title     string
 	statusErr error
 	statuses  []string
+	// statusUnbounded counts SetStatus calls that arrived without a deadline.
+	statusUnbounded int
 }
 
-func (f *fakeTracker) SetStatus(_ context.Context, _, _, status string) error {
+func (f *fakeTracker) SetStatus(ctx context.Context, _, _, status string) error {
+	if _, ok := ctx.Deadline(); !ok {
+		f.statusUnbounded++
+	}
 	f.statuses = append(f.statuses, status)
 	return f.statusErr
 }
@@ -700,6 +705,9 @@ func TestStatusSetOnMappedStates(t *testing.T) {
 	}
 	if got := strings.Join(f.tr.statuses, ","); got != "In Progress,In Review" {
 		t.Fatalf("statuses = %s", got)
+	}
+	if f.tr.statusUnbounded != 0 {
+		t.Fatalf("%d SetStatus calls without deadline", f.tr.statusUnbounded)
 	}
 }
 

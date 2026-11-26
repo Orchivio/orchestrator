@@ -101,6 +101,7 @@ func (f *fakeStore) IssuedCredentialIDs(_ context.Context, _ uuid.UUID) ([]strin
 type fakeHost struct {
 	credCalls int
 	revoked   []string
+	unbounded int // RevokeRepoCredentials calls without deadline
 	prs       []*pluginv1.OpenPullRequestRequest
 	prErr     error
 	failRepo  string
@@ -110,7 +111,10 @@ func (h *fakeHost) IssueRepoCredentials(context.Context, string, []string, bool)
 	h.credCalls++
 	return &pluginv1.RepoCredentials{Token: "t", CredentialId: "c1"}, nil
 }
-func (h *fakeHost) RevokeRepoCredentials(_ context.Context, _, id string) error {
+func (h *fakeHost) RevokeRepoCredentials(ctx context.Context, _, id string) error {
+	if _, ok := ctx.Deadline(); !ok {
+		h.unbounded++
+	}
 	h.revoked = append(h.revoked, id)
 	return nil
 }
@@ -642,6 +646,9 @@ func TestCredentialsRevokedAfterComplete(t *testing.T) {
 	}
 	if failed.state() != router.StateFailed || strings.Join(failed.host.revoked, ",") != "c1" {
 		t.Errorf("failed: state=%s revoked=%v, want c1", failed.state(), failed.host.revoked)
+	}
+	if succeeded.host.unbounded+failed.host.unbounded != 0 {
+		t.Errorf("revoke calls without deadline: %d", succeeded.host.unbounded+failed.host.unbounded)
 	}
 }
 
