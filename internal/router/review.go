@@ -32,14 +32,16 @@ func (r *Router) HandleReview(ctx context.Context, tenant string, ev *pluginv1.C
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cfg := r.cfg.Current()
-	if _, ok := cfg.Tenants[tenant]; !ok {
+	tn, ok := cfg.Tenants[tenant]
+	if !ok {
 		return nil
 	}
 	system, err := r.codeHost.AdapterName(ctx, tenant)
 	if err != nil {
 		return fmt.Errorf("code host adapter name of tenant %s: %w", tenant, err)
 	}
-	fresh, err := r.store.MarkInbound(ctx, tenant, codeHostSourcePrefix+system, ev.GetExternalId())
+	// dedup by registration name like the tracker: two registrations of one adapter kind stay apart
+	fresh, err := r.store.MarkInbound(ctx, tenant, codeHostSourcePrefix+tn.CodeHost.Name, ev.GetExternalId())
 	if err != nil {
 		return fmt.Errorf("mark inbound review %s: %w", ev.GetExternalId(), err)
 	}
@@ -64,6 +66,9 @@ func (r *Router) HandleReview(ctx context.Context, tenant string, ev *pluginv1.C
 	}
 	actors := classifier.Identities(system, ev.GetActor())
 	if !classifier.HasTasksRole(project, actors) {
+		if !ev.GetMentionsBot() {
+			return nil // reviewTrigger any: a role-less reviewer talking to others gets no notice
+		}
 		return r.reporter.Notice(ctx, tenant, run.TicketRef, NoticeReviewNoPermission)
 	}
 	in := Input{ID: r.newID(), Tenant: tenant, ConversationID: run.ConversationID,

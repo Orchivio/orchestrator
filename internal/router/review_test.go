@@ -101,6 +101,18 @@ func TestReviewWithoutRolePostsNotice(t *testing.T) {
 	}
 }
 
+func TestReviewAnyTriggerWithoutRoleOrMentionPostsNoNotice(t *testing.T) {
+	f := newFixtureWith(t, reviewRepo, func(p *config.Project) { p.ReviewTrigger = config.ReviewTriggerAny })
+	first := finishedTask(t, f, "acme")
+	inputs := len(f.s.inputs)
+
+	handleReview(t, f, "acme", review("r1", first.Branch, false, &pluginv1.Actor{Id: "9", Username: "stranger"}))
+
+	if len(f.s.runs) != 1 || len(f.s.inputs) != inputs || len(f.rep.notices) != 0 {
+		t.Fatalf("runs=%d inputs=%d notices=%v", len(f.s.runs), len(f.s.inputs), f.rep.notices)
+	}
+}
+
 func TestReviewUnknownBranchDropped(t *testing.T) {
 	f := newFixture(t, reviewRepo)
 	finishedTask(t, f, "acme")
@@ -157,5 +169,9 @@ func TestCodeHostEventDedup(t *testing.T) {
 
 	if len(f.s.inputs) != inputs+1 || len(f.s.runs) != 2 {
 		t.Fatalf("inputs=%d runs=%d, want %d and 2", len(f.s.inputs), len(f.s.runs), inputs+1)
+	}
+	// the source is the code host registration name, not the adapter_name ("host")
+	if !f.s.seen["acme/codehost:github/r1"] {
+		t.Fatalf("seen = %v, want acme/codehost:github/r1", f.s.seen)
 	}
 }
