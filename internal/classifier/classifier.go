@@ -143,8 +143,10 @@ func HasAnyRole(p config.Project, actors []string) bool {
 // HasTasksRole reports whether one of the identities holds the tasks role.
 func HasTasksRole(p config.Project, actors []string) bool { return hasRole(p.Roles.Tasks, actors) }
 
-// Identities lists how role entries can name the actor: the e-mail address
-// and system+":"+username, each when set.
+// Identities lists how role entries can name the actor: the e-mail address,
+// system+":"+username and system+":"+id, each when set. The id comes last so
+// an actor without any role keeps the same stored identity as before; it is
+// the safe choice for role entries because usernames can be renamed.
 func Identities(system string, a *pluginv1.Actor) []string {
 	var ids []string
 	if a.GetEmail() != "" {
@@ -152,6 +154,9 @@ func Identities(system string, a *pluginv1.Actor) []string {
 	}
 	if a.GetUsername() != "" {
 		ids = append(ids, system+":"+a.GetUsername())
+	}
+	if a.GetId() != "" && a.GetId() != a.GetUsername() {
+		ids = append(ids, system+":"+a.GetId())
 	}
 	return ids
 }

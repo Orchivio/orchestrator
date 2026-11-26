@@ -111,7 +111,7 @@ func TestRoleMatchesSystemUsername(t *testing.T) {
 func TestRoleEmailStillMatches(t *testing.T) {
 	a := &pluginv1.Actor{Id: "u1", Email: "dev@x"}
 	ids := Identities("linear", a)
-	if len(ids) != 1 || ids[0] != "dev@x" {
+	if len(ids) != 2 || ids[0] != "dev@x" {
 		t.Fatalf("ids = %v", ids)
 	}
 	if d := Classify(fixture(), Input{Trigger: "assigned", Actors: ids}); d.Kind != "task" {
@@ -123,5 +123,31 @@ func TestIdentitiesListsEmailAndUsername(t *testing.T) {
 	got := Identities("jira", &pluginv1.Actor{Email: "a@b.de", Username: "jdoe"})
 	if !reflect.DeepEqual(got, []string{"a@b.de", "jira:jdoe"}) {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestIdentitiesAppendsSystemID(t *testing.T) {
+	got := Identities("jira", &pluginv1.Actor{Id: "5b10", Email: "a@b.de", Username: "jdoe"})
+	if !reflect.DeepEqual(got, []string{"a@b.de", "jira:jdoe", "jira:5b10"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestIdentitiesSkipsIDEqualToUsername(t *testing.T) {
+	got := Identities("gitlab", &pluginv1.Actor{Id: "jdoe", Username: "jdoe"})
+	if !reflect.DeepEqual(got, []string{"gitlab:jdoe"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestRoleMatchesSystemID(t *testing.T) {
+	p := fixture()
+	p.Roles.Tasks = []string{"jira:5b10"}
+	a := &pluginv1.Actor{Id: "5b10", Username: "renamed"}
+	if d := Classify(p, Input{Trigger: "assigned", Actors: Identities("jira", a)}); d.Kind != "task" {
+		t.Fatalf("got %+v", d)
+	}
+	if HasAnyRole(p, Identities("gitlab", a)) {
+		t.Fatal("system must be part of the identity")
 	}
 }

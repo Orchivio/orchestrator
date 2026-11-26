@@ -72,6 +72,8 @@ Orchivio läuft in Linear als **App-User** einer OAuth-App: eigener Nutzer, erw�
 - `ORCHIVIO_SEED_EMAIL`: deine Linear-E-Mail-Adresse für `roles.questions` und `roles.tasks`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
 - `ORCHIVIO_SEED_MODEL`: Modell des Profils; ein Alias wie `sonnet` funktioniert mit Claude Code.
 
+Rolleneinträge in `roles.questions`/`roles.tasks` sind E-Mail-Adressen, `<system>:<username>` oder `<system>:<id>` (`<system>` ist der `adapter_name`, z. B. `jira`, `gitlab`, `github`). Empfohlen ist `<system>:<id>` (Jira-`accountId` bzw. DC-Benutzerschlüssel, numerische GitLab-User-ID): IDs ändern sich nie, Benutzernamen und E-Mail-Adressen schon.
+
 ### Verbinden
 
 Fehlt eine Verbindung, gibt `seed.sh` die Links aus (`POST /api/v1/tenants/acme/connections/{linear|github}/authorize`). Beide im Browser öffnen und zustimmen (GitHub: Installation auf das Test-Repo beschränken), danach `dev/seed.sh` erneut ausführen: Jetzt entsteht das Projekt. Den Stand zeigt `GET /api/v1/tenants/acme/connections` (`kind` tracker oder codehost, `status` active oder needs_reauth; bei `needs_reauth` den Link erneut erzeugen und öffnen).
