@@ -2,7 +2,9 @@ package conformance
 
 import (
 	"context"
+	"errors"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -58,6 +60,9 @@ func (f *fakeTracker) GetTicket(_ context.Context, req *pluginv1.GetTicketReques
 			return nil, status.Error(f.invalidCode, "bad credential")
 		}
 		return nil, status.Error(codes.Unauthenticated, "bad credential")
+	}
+	if !strings.HasPrefix(req.GetTicketRef(), "ORC-") {
+		return nil, status.Error(codes.InvalidArgument, "malformed ticket ref")
 	}
 	if req.GetTicketRef() != knownTicket {
 		return nil, status.Error(f.notFoundCode, "unknown ticket")
@@ -136,7 +141,7 @@ func TestRunReportsHangingStream(t *testing.T) {
 	failures := Run(context.Background(), target)
 
 	if got := checks(failures); len(got) != 1 || got[0] != "stream-ends-on-cancel" {
-		t.Fatalf("expected only stream-cancel failure, got %v", failures)
+		t.Fatalf("expected only stream-ends-on-cancel failure, got %v", failures)
 	}
 }
 
@@ -211,6 +216,13 @@ func (h *hangingStream) RecvMsg(any) error {
 type fakeCodeHost struct {
 	pluginv1.UnimplementedCodeHostAdapterServer
 	withToken bool
+	revokeErr error
+	revoked   []string
+}
+
+func (f *fakeCodeHost) RevokeRepoCredentials(_ context.Context, req *pluginv1.RevokeRepoCredentialsRequest) (*pluginv1.RevokeRepoCredentialsResponse, error) {
+	f.revoked = append(f.revoked, req.GetCredentialId())
+	return &pluginv1.RevokeRepoCredentialsResponse{}, f.revokeErr
 }
 
 func (f *fakeCodeHost) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
@@ -224,13 +236,16 @@ func (f *fakeCodeHost) IssueRepoCredentials(_ context.Context, req *pluginv1.Iss
 	if string(req.GetCredentials()[0].GetData()) == string(invalidCredential) {
 		return nil, status.Error(codes.Unauthenticated, "bad credential")
 	}
+	if !strings.HasPrefix(req.GetRepos()[0], "acme/") {
+		return nil, status.Error(codes.InvalidArgument, "malformed repo")
+	}
 	if req.GetRepos()[0] != knownRepo {
 		return nil, status.Error(codes.NotFound, "unknown repo")
 	}
 	if !f.withToken {
-		return &pluginv1.RepoCredentials{}, nil
+		return &pluginv1.RepoCredentials{CredentialId: "cred-1"}, nil
 	}
-	return &pluginv1.RepoCredentials{Tokens: map[string]*pluginv1.RepoToken{knownRepo: {Token: "t"}}}, nil
+	return &pluginv1.RepoCredentials{CredentialId: "cred-1", Tokens: map[string]*pluginv1.RepoToken{knownRepo: {Token: "t"}}}, nil
 }
 
 func (f *fakeCodeHost) StreamEvents(_ *pluginv1.StreamCodeHostEventsRequest, stream grpc.ServerStreamingServer[pluginv1.CodeHostEvent]) error {
@@ -238,21 +253,27 @@ func (f *fakeCodeHost) StreamEvents(_ *pluginv1.StreamCodeHostEventsRequest, str
 	return stream.Context().Err()
 }
 
-func runCodeHostTarget(t *testing.T, withToken bool) []Failure {
-	addr := serve(t, func(s *grpc.Server) {
-		pluginv1.RegisterCodeHostAdapterServer(s, &fakeCodeHost{withToken: withToken})
-	})
+func runCodeHostTarget(t *testing.T, fake *fakeCodeHost) []Failure {
+	addr := serve(t, func(s *grpc.Server) { pluginv1.RegisterCodeHostAdapterServer(s, fake) })
 	return Run(context.Background(), Target{Addr: addr, Kind: "codehost", Credential: goodCredential, Repo: knownRepo})
 }
 
-func TestRunPassesConformingCodeHost(t *testing.T) {
-	failures := runCodeHostTarget(t, true)
+func TestRunPassesConformingCodeHostAndRevokesIssuedToken(t *testing.T) {
+	fake := &fakeCodeHost{withToken: true}
 
-	if len(failures) != 0 {
-		t.Fatalf("expected conform, got %v", failures)
+	failures := runCodeHostTarget(t, fake)
+
+	if len(failures) != 0 || len(fake.revoked) != 1 || fake.revoked[0] != "cred-1" {
+		t.Fatalf("expected conform and one revoke of cred-1, got %v / %v", failures, fake.revoked)
 	}
 }
 
 func TestRunReportsMissingRepoToken(t *testing.T) {
-	assertOnly(t, runCodeHostTarget(t, false), "repo-credentials")
+	assertOnly(t, runCodeHostTarget(t, &fakeCodeHost{}), "repo-credentials")
+}
+
+func TestRunReportsRevokeError(t *testing.T) {
+	fake := &fakeCodeHost{withToken: true, revokeErr: errors.New("boom")}
+
+	assertOnly(t, runCodeHostTarget(t, fake), "repo-credentials")
 }

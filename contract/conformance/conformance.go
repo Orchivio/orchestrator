@@ -4,6 +4,7 @@ package conformance
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -22,7 +23,21 @@ const (
 
 	contractVersion = "plugin.v1"
 	unknownRef      = "orchivio-conformance-unknown"
+	unknownNumber   = "999999999"
 )
+
+// unknownTicket derives a format-valid ref that should not exist from the known ticket
+// ("ORC-12" -> "ORC-999999999"), so adapters reach their NotFound path instead of
+// rejecting the format with InvalidArgument.
+func unknownTicket(known string) string {
+	if project, _, found := strings.Cut(known, "-"); found {
+		return project + "-" + unknownNumber
+	}
+	return unknownRef
+}
+
+// unknownRepo derives a format-valid repo in the known repo's namespace that should not exist.
+func unknownRepo(known string) string { return path.Dir(known) + "/" + unknownRef }
 
 // rejectCodes are the acceptable answers to a missing or invalid credential.
 var rejectCodes = []codes.Code{codes.Unauthenticated, codes.InvalidArgument, codes.PermissionDenied}
@@ -152,7 +167,7 @@ func runTracker(ctx context.Context, client pluginv1.TrackerAdapterClient, t Tar
 	c.capabilities(caps)
 	cred := &pluginv1.Credential{Data: t.Credential}
 
-	_, err = client.GetTicket(ctx, &pluginv1.GetTicketRequest{TicketRef: unknownRef, Credential: cred})
+	_, err = client.GetTicket(ctx, &pluginv1.GetTicketRequest{TicketRef: unknownTicket(t.Ticket), Credential: cred})
 	c.expectCode("unknown-ticket", err, codes.NotFound, codes.FailedPrecondition)
 	_, err = client.GetTicket(ctx, &pluginv1.GetTicketRequest{TicketRef: t.Ticket, Credential: &pluginv1.Credential{}})
 	c.expectCode("empty-credential", err, rejectCodes...)
@@ -187,7 +202,7 @@ func runCodeHost(ctx context.Context, client pluginv1.CodeHostAdapterClient, t T
 	c.capabilities(caps)
 	creds := []*pluginv1.Credential{{Data: t.Credential}}
 
-	_, err = client.IssueRepoCredentials(ctx, &pluginv1.IssueRepoCredentialsRequest{Repos: []string{unknownRef}, Credentials: creds})
+	_, err = client.IssueRepoCredentials(ctx, &pluginv1.IssueRepoCredentialsRequest{Repos: []string{unknownRepo(t.Repo)}, Credentials: creds})
 	c.expectCode("unknown-repo", err, codes.NotFound, codes.FailedPrecondition)
 	_, err = client.IssueRepoCredentials(ctx, &pluginv1.IssueRepoCredentialsRequest{Repos: []string{t.Repo}, Credentials: []*pluginv1.Credential{{}}})
 	c.expectCode("empty-credential", err, rejectCodes...)
@@ -197,8 +212,15 @@ func runCodeHost(ctx context.Context, client pluginv1.CodeHostAdapterClient, t T
 	issued, err := client.IssueRepoCredentials(ctx, &pluginv1.IssueRepoCredentialsRequest{Repos: []string{t.Repo}, Credentials: creds})
 	if err != nil {
 		c.add("repo-credentials", "issue failed: %v", err)
-	} else if issued.GetToken() == "" && issued.GetTokens()[t.Repo].GetToken() == "" {
-		c.add("repo-credentials", "no token for %q (neither token nor tokens[repo])", t.Repo)
+	} else {
+		if issued.GetToken() == "" && issued.GetTokens()[t.Repo].GetToken() == "" {
+			c.add("repo-credentials", "no token for %q (neither token nor tokens[repo])", t.Repo)
+		}
+		// revoke right away so the check leaves no live token behind
+		_, err = client.RevokeRepoCredentials(ctx, &pluginv1.RevokeRepoCredentialsRequest{CredentialId: issued.GetCredentialId(), Credentials: creds})
+		if err != nil {
+			c.add("repo-credentials", "revoke %q failed: %v", issued.GetCredentialId(), err)
+		}
 	}
 
 	c.expectCancel(ctx, func(sctx context.Context) (func() error, error) {
