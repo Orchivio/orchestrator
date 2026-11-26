@@ -33,6 +33,7 @@ var AdminRoutes = []Route{
 	{"GET", "/tenants/{slug}/projects/{id}"}, {"PUT", "/tenants/{slug}/projects/{id}"}, {"DELETE", "/tenants/{slug}/projects/{id}"},
 	{"GET", "/tenants/{slug}/projects/{id}/runs"}, {"GET", "/tenants/{slug}/projects/{id}/runs/{runId}"},
 	{"GET", "/tenants/{slug}/connections"}, {"POST", "/tenants/{slug}/connections/{adapter}/authorize"},
+	{"GET", "/tenants/{slug}/connections/{adapter}/form"}, {"POST", "/tenants/{slug}/connections/{adapter}/form"},
 	{"GET", "/tenants/{slug}/connections/{id}"}, {"DELETE", "/tenants/{slug}/connections/{id}"},
 	{"GET", "/tokens"}, {"POST", "/tokens"}, {"DELETE", "/tokens/{id}"},
 }
@@ -59,6 +60,8 @@ func NewAdmin(svc *admin.Service, log *slog.Logger) http.Handler {
 		"GET /tenants/{slug}/projects/{id}/runs/{runId}":       a.getRun,
 		"GET /tenants/{slug}/connections":                      a.listConnections,
 		"POST /tenants/{slug}/connections/{adapter}/authorize": a.authorize,
+		"GET /tenants/{slug}/connections/{adapter}/form":       a.connectForm,
+		"POST /tenants/{slug}/connections/{adapter}/form":      a.formConnect,
 		"GET /tenants/{slug}/connections/{id}":                 a.getConnection,
 		"DELETE /tenants/{slug}/connections/{id}":              a.deleteConnection,
 		"GET /tokens": a.listTokens, "POST /tokens": a.createToken, "DELETE /tokens/{id}": a.revokeToken,
@@ -120,18 +123,21 @@ type profileDTO struct {
 }
 
 type projectDTO struct {
-	ID           string                 `json:"id"`
-	Name         string                 `json:"name"`
-	TrackerKey   string                 `json:"trackerKey"`
-	ProfileID    string                 `json:"profileId"`
-	Repos        []config.Repo          `json:"repos"`
-	Classifier   config.ClassifierRules `json:"classifier"`
-	Roles        config.Roles           `json:"roles"`
-	MaxDiffLines int                    `json:"maxDiffLines"`
-	Milestones   []string               `json:"milestones"`
-	Version      int64                  `json:"version"`
-	CreatedAt    time.Time              `json:"createdAt"`
-	UpdatedAt    time.Time              `json:"updatedAt"`
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	TrackerKey     string                 `json:"trackerKey"`
+	ProfileID      string                 `json:"profileId"`
+	Repos          []config.Repo          `json:"repos"`
+	Classifier     config.ClassifierRules `json:"classifier"`
+	Roles          config.Roles           `json:"roles"`
+	MaxDiffLines   int                    `json:"maxDiffLines"`
+	Milestones     []string               `json:"milestones"`
+	StatusMap      map[string]string      `json:"statusMap"`
+	ReviewTrigger  string                 `json:"reviewTrigger"`
+	CommentTrigger string                 `json:"commentTrigger"`
+	Version        int64                  `json:"version"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	UpdatedAt      time.Time              `json:"updatedAt"`
 }
 
 type tokenDTO struct {
@@ -167,7 +173,8 @@ func profileOut(p admin.Profile) profileDTO {
 
 func projectOut(p admin.Project) projectDTO {
 	return projectDTO{p.ID.String(), p.Name, p.TrackerKey, p.ProfileID.String(), reposOut(p.Repos), classifierOut(p.Classifier), rolesOut(p.Roles),
-		p.MaxDiffLines, nonNil(p.Milestones), p.Version, p.CreatedAt, p.UpdatedAt}
+		p.MaxDiffLines, nonNil(p.Milestones), statusMapOut(p.StatusMap), config.Project{ReviewTrigger: p.ReviewTrigger}.EffectiveReviewTrigger(),
+		config.Project{CommentTrigger: p.CommentTrigger}.EffectiveCommentTrigger(), p.Version, p.CreatedAt, p.UpdatedAt}
 }
 
 func tokenOut(t admin.Token) tokenDTO {
@@ -196,6 +203,13 @@ func rolesOut(r config.Roles) config.Roles {
 	return r
 }
 
+func statusMapOut(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
 func nonNil[T any](s []T) []T {
 	if s == nil {
 		return []T{}
@@ -222,7 +236,8 @@ func (d projectDTO) domain(tenant string, id uuid.UUID) (admin.Project, error) {
 		return admin.Project{}, fieldProblem("profileId", "must be a UUID")
 	}
 	return admin.Project{ID: id, TenantSlug: tenant, Name: d.Name, TrackerKey: d.TrackerKey, ProfileID: profileID,
-		Repos: d.Repos, Classifier: d.Classifier, Roles: d.Roles, MaxDiffLines: d.MaxDiffLines, Milestones: d.Milestones}, nil
+		Repos: d.Repos, Classifier: d.Classifier, Roles: d.Roles, MaxDiffLines: d.MaxDiffLines, Milestones: d.Milestones,
+		StatusMap: d.StatusMap, ReviewTrigger: d.ReviewTrigger, CommentTrigger: d.CommentTrigger}, nil
 }
 
 // --- plumbing ---

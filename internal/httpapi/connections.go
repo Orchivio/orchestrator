@@ -53,3 +53,43 @@ func (a *adminAPI) deleteConnection(w http.ResponseWriter, r *http.Request) {
 		a.noContent(w, a.svc.DeleteConnection(r.Context(), r.PathValue("slug"), id))
 	}
 }
+
+type formFieldDTO struct {
+	Name     string `json:"name"`
+	Label    string `json:"label"`
+	Secret   bool   `json:"secret"`
+	Required bool   `json:"required"`
+}
+
+func (a *adminAPI) connectForm(w http.ResponseWriter, r *http.Request) {
+	fields, err := a.svc.ConnectForm(r.Context(), r.PathValue("slug"), r.PathValue("adapter"))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	out := make([]formFieldDTO, len(fields))
+	for i, f := range fields {
+		out[i] = formFieldDTO{f.Name, f.Label, f.Secret, f.Required}
+	}
+	a.send(w, http.StatusOK, 0, map[string]any{"fields": out})
+}
+
+func (a *adminAPI) formConnect(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Fields map[string]string `json:"fields"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	slug := r.PathValue("slug")
+	c, created, err := a.svc.FormConnect(r.Context(), slug, r.PathValue("adapter"), req.Fields)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if created {
+		a.created(w, "/tenants/"+slug+"/connections/"+c.ID.String(), 0, connectionOut(c))
+		return
+	}
+	a.send(w, http.StatusOK, 0, connectionOut(c))
+}

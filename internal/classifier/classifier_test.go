@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/orchivio/orchestrator/internal/config"
+
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 )
 
 func fixture() config.Project {
@@ -39,23 +41,23 @@ func TestClassify(t *testing.T) {
 		note      string
 		needsRepo bool
 	}{
-		{"assigned default task", fixture(), Input{Trigger: "assigned", ActorEmail: "dev@x"}, "task", []string{"A"}, "", false},
-		{"mentioned default question", fixture(), Input{Trigger: "mentioned", ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
-		{"task label without role", fixture(), Input{Trigger: "mentioned", Labels: []string{"orchivio:aufgabe"}, ActorEmail: "q@x"}, "question", []string{"A"}, "herabgestuft", false},
-		{"question label on assign", fixture(), Input{Trigger: "assigned", Labels: []string{"orchivio:frage"}, ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
-		{"both labels question", fixture(), Input{Trigger: "assigned", Labels: []string{"orchivio:aufgabe", "orchivio:frage"}, ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
-		{"followup keeps task", fixture(), Input{Trigger: "followup", PreviousKind: "task", ActorEmail: "dev@x"}, "task", []string{"A"}, "", false},
-		{"followup other actor lacks tasks role", fixture(), Input{Trigger: "followup", PreviousKind: "task", ActorEmail: "dev@x", OtherActors: []string{"q@x"}}, "question", []string{"A"}, "herabgestuft", false},
-		{"followup other actors with tasks role", fixture(), Input{Trigger: "followup", PreviousKind: "task", ActorEmail: "dev@x", OtherActors: []string{"pm@x"}}, "task", []string{"A"}, "", false},
-		{"followup empty previous", fixture(), Input{Trigger: "followup", ActorEmail: "dev@x"}, "question", []string{"A"}, "", false},
-		{"repo dropped no default", fixture(), Input{Trigger: "mentioned", Labels: []string{"repo:b"}, ActorEmail: "pm@x"}, "question", nil, "Berechtigung fehlt für mindestens ein Repo.", true},
-		{"no label no default", noDefault, Input{Trigger: "mentioned", ActorEmail: "dev@x"}, "question", nil, "", true},
+		{"assigned default task", fixture(), Input{Trigger: "assigned", Actors: []string{"dev@x"}}, "task", []string{"A"}, "", false},
+		{"mentioned default question", fixture(), Input{Trigger: "mentioned", Actors: []string{"dev@x"}}, "question", []string{"A"}, "", false},
+		{"task label without role", fixture(), Input{Trigger: "mentioned", Labels: []string{"orchivio:aufgabe"}, Actors: []string{"q@x"}}, "question", []string{"A"}, "herabgestuft", false},
+		{"question label on assign", fixture(), Input{Trigger: "assigned", Labels: []string{"orchivio:frage"}, Actors: []string{"dev@x"}}, "question", []string{"A"}, "", false},
+		{"both labels question", fixture(), Input{Trigger: "assigned", Labels: []string{"orchivio:aufgabe", "orchivio:frage"}, Actors: []string{"dev@x"}}, "question", []string{"A"}, "", false},
+		{"followup keeps task", fixture(), Input{Trigger: "followup", PreviousKind: "task", Actors: []string{"dev@x"}}, "task", []string{"A"}, "", false},
+		{"followup other actor lacks tasks role", fixture(), Input{Trigger: "followup", PreviousKind: "task", Actors: []string{"dev@x"}, OtherActors: [][]string{{"q@x"}}}, "question", []string{"A"}, "herabgestuft", false},
+		{"followup other actors with tasks role", fixture(), Input{Trigger: "followup", PreviousKind: "task", Actors: []string{"dev@x"}, OtherActors: [][]string{{"x@x", "pm@x"}}}, "task", []string{"A"}, "", false},
+		{"followup empty previous", fixture(), Input{Trigger: "followup", Actors: []string{"dev@x"}}, "question", []string{"A"}, "", false},
+		{"repo dropped no default", fixture(), Input{Trigger: "mentioned", Labels: []string{"repo:b"}, Actors: []string{"pm@x"}}, "question", nil, "Berechtigung fehlt für mindestens ein Repo.", true},
+		{"no label no default", noDefault, Input{Trigger: "mentioned", Actors: []string{"dev@x"}}, "question", nil, "", true},
 		{"default filtered by users", func() config.Project {
 			p := fixture()
 			p.Classifier.DefaultRepo = "B"
 			return p
-		}(), Input{Trigger: "mentioned", ActorEmail: "pm@x"}, "question", nil, "Berechtigung fehlt für mindestens ein Repo.", true},
-		{"two repos in order", fixture(), Input{Trigger: "assigned", Labels: []string{"repo:a", "repo:b", "repo:a"}, ActorEmail: "DEV@x"}, "task", []string{"A", "B"}, "", false},
+		}(), Input{Trigger: "mentioned", Actors: []string{"pm@x"}}, "question", nil, "Berechtigung fehlt für mindestens ein Repo.", true},
+		{"two repos in order", fixture(), Input{Trigger: "assigned", Labels: []string{"repo:a", "repo:b", "repo:a"}, Actors: []string{"DEV@x"}}, "task", []string{"A", "B"}, "", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,8 +86,80 @@ func TestClassify(t *testing.T) {
 func TestHasAnyRole(t *testing.T) {
 	p := fixture()
 	for email, want := range map[string]bool{"nobody@x": false, "DEV@X": true, "Q@x": true} {
-		if got := HasAnyRole(p, email); got != want {
+		if got := HasAnyRole(p, []string{email}); got != want {
 			t.Errorf("%s: got %v", email, got)
 		}
+	}
+}
+
+func TestRoleMatchesSystemUsername(t *testing.T) {
+	p := fixture()
+	p.Roles.Tasks = []string{"jira:jdoe"}
+	a := &pluginv1.Actor{Id: "5b10", Username: "jdoe"}
+	d := Classify(p, Input{Trigger: "assigned", Actors: Identities("jira", a)})
+	if d.Kind != "task" {
+		t.Fatalf("got %+v", d)
+	}
+	if !HasAnyRole(p, Identities("jira", a)) {
+		t.Fatal("role missing")
+	}
+	if HasAnyRole(p, Identities("gitlab", a)) {
+		t.Fatal("system must be part of the identity")
+	}
+}
+
+func TestRoleEmailStillMatches(t *testing.T) {
+	a := &pluginv1.Actor{Id: "u1", Email: "dev@x"}
+	ids := Identities("linear", a)
+	if len(ids) != 2 || ids[0] != "dev@x" {
+		t.Fatalf("ids = %v", ids)
+	}
+	if d := Classify(fixture(), Input{Trigger: "assigned", Actors: ids}); d.Kind != "task" {
+		t.Fatalf("got %+v", d)
+	}
+}
+
+func TestIdentitiesListsEmailAndUsername(t *testing.T) {
+	got := Identities("jira", &pluginv1.Actor{Email: "a@b.de", Username: "jdoe"})
+	if !reflect.DeepEqual(got, []string{"a@b.de", "jira:jdoe"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestIdentitiesAppendsSystemID(t *testing.T) {
+	got := Identities("jira", &pluginv1.Actor{Id: "5b10", Email: "a@b.de", Username: "jdoe"})
+	if !reflect.DeepEqual(got, []string{"a@b.de", "jira:jdoe", "jira:id:5b10"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestIdentitiesSkipsReservedIDPrefixUsername(t *testing.T) {
+	got := Identities("acme", &pluginv1.Actor{Username: "ID:12345"})
+	if len(got) != 0 {
+		t.Fatalf("got %v, want no identity from an id:-prefixed username", got)
+	}
+}
+
+func TestRoleIDDoesNotMatchEqualUsername(t *testing.T) {
+	p := fixture()
+	p.Roles.Tasks = []string{"acme:12345"} // username entry of another user
+	if HasAnyRole(p, Identities("acme", &pluginv1.Actor{Id: "12345", Username: "mallory"})) {
+		t.Fatal("an id must not match a username entry")
+	}
+	p.Roles.Tasks = []string{"acme:id:12345"}
+	if HasAnyRole(p, Identities("acme", &pluginv1.Actor{Id: "999", Username: "12345"})) {
+		t.Fatal("a username must not match an id entry")
+	}
+}
+
+func TestRoleMatchesSystemID(t *testing.T) {
+	p := fixture()
+	p.Roles.Tasks = []string{"jira:id:5b10"}
+	a := &pluginv1.Actor{Id: "5b10", Username: "renamed"}
+	if d := Classify(p, Input{Trigger: "assigned", Actors: Identities("jira", a)}); d.Kind != "task" {
+		t.Fatalf("got %+v", d)
+	}
+	if HasAnyRole(p, Identities("gitlab", a)) {
+		t.Fatal("system must be part of the identity")
 	}
 }

@@ -72,6 +72,10 @@ Orchivio läuft in Linear als **App-User** einer OAuth-App: eigener Nutzer, erw�
 - `ORCHIVIO_SEED_EMAIL`: deine Linear-E-Mail-Adresse für `roles.questions` und `roles.tasks`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
 - `ORCHIVIO_SEED_MODEL`: Modell des Profils; ein Alias wie `sonnet` funktioniert mit Claude Code.
 
+Optional steuert `commentTrigger` im Projekt (`any`, Standard, oder `mention`), ob in einem Ticket mit Konversation jeder Kommentar als Antwort oder Folgefrage zählt oder nur ein Kommentar mit Erwähnung des Bots.
+
+Rolleneinträge in `roles.questions`/`roles.tasks` sind E-Mail-Adressen, `<system>:<username>` oder `<system>:id:<id>` (`<system>` ist der `adapter_name`, z. B. `jira`, `gitlab`, `github`; Beispiel `gitlab:id:12345`). Empfohlen ist `<system>:id:<id>` (Jira-`accountId` bzw. DC-Benutzerschlüssel, numerische GitLab-User-ID): IDs ändern sich nie, Benutzernamen und E-Mail-Adressen schon. IDs haben einen eigenen Namensraum, damit eine ID nie den gleichlautenden Benutzernamen eines anderen trifft; Benutzernamen, die mit `id:` beginnen, gelten nicht.
+
 ### Verbinden
 
 Fehlt eine Verbindung, gibt `seed.sh` die Links aus (`POST /api/v1/tenants/acme/connections/{linear|github}/authorize`). Beide im Browser öffnen und zustimmen (GitHub: Installation auf das Test-Repo beschränken), danach `dev/seed.sh` erneut ausführen: Jetzt entsteht das Projekt. Den Stand zeigt `GET /api/v1/tenants/acme/connections` (`kind` tracker oder codehost, `status` active oder needs_reauth; bei `needs_reauth` den Link erneut erzeugen und öffnen).
@@ -109,6 +113,39 @@ dev/stop-all.sh                        # stoppt alles, die Datenbank bleibt im V
 ```
 
 `run-all.sh` meldet fehlende Variablen mit Namen (nie mit Werten). Nur der HTTP-Port (`127.0.0.1:8088`) ist vom Rechner aus erreichbar: Admin-API inkl. Runs (`/api/v1`, Bearer-Token über unverschlüsseltes HTTP, daher nur lokal); gRPC bleibt im Compose-Netz (unverschlüsselt, ohne Authentifizierung, mTLS vor entfernten Workern). Der Worker startet die Sandboxen über den Podman-Socket der Machine; sein Arbeitsverzeichnis liegt unter `~/.orchivio/work`, weil die Machine das Home-Verzeichnis unter gleichem Pfad einbindet. Mit `ORCHIVIO_PULL=never` nutzt `run-all.sh` lokal vorhandene Images.
+
+## Live-Test Jira/GitLab
+
+Die Adapter `adapter-jira` und `adapter-gitlab` liegen im Compose-Profil `jira-gitlab`; ohne Profil startet `dev/run-all.sh` genau dieselben Dienste wie bisher. Solange die Adapter-PRs nicht gemergt sind, gibt es die Images nicht auf GHCR: lokal bauen (`ghcr.io/orchivio/adapter-jira:main`, `ghcr.io/orchivio/adapter-gitlab:main` taggen) und mit `ORCHIVIO_PULL=never` starten.
+
+Der Orchestrator kennt die Zusatz-Adapter nur über `ORCHIVIO_EXTRA_ADAPTERS`, das an `ORCHIVIO_ADAPTERS` angehängt wird (führendes Komma). Beides in `dev/.env` (siehe `env.example`) oder in der Umgebung setzen:
+
+```sh
+export COMPOSE_PROFILES=jira-gitlab
+export ORCHIVIO_EXTRA_ADAPTERS=,jira-cloud=adapter-jira-cloud:7301,jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401
+ORCHIVIO_PULL=never dev/run-all.sh
+```
+
+`JIRA_URL` (nur Data Center) und `GITLAB_URL` stehen in der `.env`. Container `jira-dc` und `gitlab-ce` sind bewusst nicht Teil des Stacks (große Images); es werden bestehende Instanzen genutzt.
+
+`seed.sh` legt zusätzlich den Mandanten `beta` an (Tracker `jira-cloud`, oder `ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc`; Code-Host `gitlab`), verbindet beide per Formular (`POST /api/v1/tenants/beta/connections/{adapter}/form`, Body `{"fields": {...}}`) und legt das Projekt `demo-jira` mit `statusMap` `{"running":"In Progress","succeeded":"In Review","failed":"To Do"}` an. Das passiert nur, wenn `ORCHIVIO_SEED_JIRA_{TOKEN,KEY}` und `ORCHIVIO_SEED_GITLAB_{PATH,TOKEN,REPO}` gesetzt sind (bei `jira-cloud` zusätzlich `ORCHIVIO_SEED_JIRA_{SITE_URL,EMAIL}`; die Formularfelder richten sich nach dem Adapter, bei `jira-dc` nur `token`). Optional: `ORCHIVIO_SEED_JIRA_JQL` setzt den JQL-Filter der Verbindung; `ORCHIVIO_SEED_JIRA_USER` und `ORCHIVIO_SEED_GITLAB_USER` ergänzen die Rollen um `jira:<user>` bzw. `gitlab:<user>` (am besten die ID als `id:<id>`, z. B. `ORCHIVIO_SEED_GITLAB_USER=id:12345`, siehe oben). Rollen werden nur beim Anlegen des Projekts gesetzt. Schlägt beta fehl, gibt `seed.sh` eine Warnung aus und legt `acme` trotzdem an. Tokens stehen nur in der `.env` und werden nie ausgegeben.
+
+`adapter-jira-dc` startet ohne `JIRA_URL` nicht und startet im Profil `jira-gitlab` dann in einer Schleife neu. Wer nur Jira Cloud nutzt, stoppt den Container (`podman compose -f dev/compose.yaml stop adapter-jira-dc`); der Rest des Stacks läuft unabhängig davon.
+
+### Proxy und eigene CA
+
+Die Adapter reichen `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `SSL_CERT_FILE` und `SSL_CERT_DIR` aus der `.env` durch. `SSL_CERT_FILE`/`SSL_CERT_DIR` zeigen auf ein CA-Bundle, das im Container liegen muss (Volume ergänzen, z. B. in einer `compose.override.yaml`). Der Worker braucht für `git` gegen GitLab hinter einer eigenen CA zusätzlich `GIT_SSL_CAINFO` (Pfad des Bundles im Worker bzw. in der Sandbox) sowie bei Bedarf dieselben Proxy-Variablen; sie sind im Compose nicht vorverdrahtet und kommen über eine Override-Datei.
+
+### Checkliste (je Jira Data Center, Jira Cloud, GitLab CE/SaaS)
+
+- [ ] Verbinden: `seed.sh` bzw. Formular-Endpoint; `GET /tenants/beta/connections` zeigt `active`.
+- [ ] Projekt mit `statusMap` angelegt.
+- [ ] Ticket dem Orchivio-Nutzer zuweisen: Run startet, Status wechselt auf „In Progress“.
+- [ ] Run endet mit einem Merge Request; Ticket-Status wechselt auf „In Review“.
+- [ ] Kommentar im MR mit Erwähnung von Orchivio: Antwort bzw. Folge-Run.
+- [ ] Folge-Run auf demselben Branch: neuer Commit im bestehenden MR.
+- [ ] Tokens widerrufen (Verbindung löschen): Die Projekt-Tokenliste in GitLab ist leer.
+- [ ] Ergebnis (Datum, Instanz, Auffälligkeiten) hier eintragen.
 
 ## Bauen und Veröffentlichen
 

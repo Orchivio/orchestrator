@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/orchivio/orchestrator/internal/config"
+
+	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 )
 
 type Trigger string
@@ -29,10 +31,12 @@ type Input struct {
 	Trigger      Trigger
 	PreviousKind string
 	Labels       []string
-	ActorEmail   string
-	// OtherActors wrote further inputs feeding this run; a task needs the tasks role
-	// of every one of them (fail closed), repos stay decided by ActorEmail.
-	OtherActors []string
+	// Actors are all identities of the acting user (see Identities).
+	Actors []string
+	// OtherActors wrote further inputs feeding this run, the identities of each
+	// actor as one list; a task needs the tasks role of every actor through any
+	// of its identities (fail closed), repos stay decided by Actors.
+	OtherActors [][]string
 }
 
 type Decision struct {
@@ -47,7 +51,7 @@ type Decision struct {
 func Classify(p config.Project, in Input) Decision {
 	d := Decision{}
 	d.Kind = classifyKind(p, in, &d)
-	if d.Kind == KindTask && !allContain(p.Roles.Tasks, append([]string{in.ActorEmail}, in.OtherActors...)) {
+	if d.Kind == KindTask && (!hasRole(p.Roles.Tasks, in.Actors) || !allContain(p.Roles.Tasks, in.OtherActors)) {
 		d.Kind = KindQuestion
 		d.Notes = append(d.Notes, NoteDowngraded)
 		d.Reason = append(d.Reason, "downgraded to question: actor lacks tasks role")
@@ -105,7 +109,7 @@ func selectRepos(p config.Project, in Input, d *Decision) {
 	}
 	denied := false
 	for _, slug := range candidates {
-		if repoAllows(p, slug, in.ActorEmail) {
+		if repoAllows(p, slug, in.Actors) {
 			d.Repos = append(d.Repos, slug)
 			continue
 		}
@@ -122,26 +126,79 @@ func selectRepos(p config.Project, in Input, d *Decision) {
 	}
 }
 
-func repoAllows(p config.Project, slug, email string) bool {
+func repoAllows(p config.Project, slug string, actors []string) bool {
 	for _, r := range p.Repos {
 		if r.Slug == slug {
-			return len(r.Users) == 0 || contains(r.Users, email)
+			return len(r.Users) == 0 || hasRole(r.Users, actors)
 		}
 	}
 	return false // unknown slug in config
 }
 
-// HasAnyRole reports whether the email holds the questions or tasks role.
-func HasAnyRole(p config.Project, email string) bool {
-	return contains(p.Roles.Questions, email) || contains(p.Roles.Tasks, email)
+// HasAnyRole reports whether one of the identities holds the questions or tasks role.
+func HasAnyRole(p config.Project, actors []string) bool {
+	return hasRole(p.Roles.Questions, actors) || hasRole(p.Roles.Tasks, actors)
+}
+
+// HasTasksRole reports whether one of the identities holds the tasks role.
+func HasTasksRole(p config.Project, actors []string) bool { return hasRole(p.Roles.Tasks, actors) }
+
+// idNamespace separates ids from usernames (ruling R17): "acme:id:12345" can
+// never match a user whose username is "12345", and the reverse.
+const idNamespace = "id:"
+
+// Identities lists how role entries can name the actor: the e-mail address,
+// system+":"+username and system+":id:"+id, each when set. A username starting
+// with "id:" is skipped, since that prefix is reserved for ids. The id comes
+// last so an actor without any role keeps the same stored identity as before;
+// it is the safe choice for role entries because usernames can be renamed.
+func Identities(system string, a *pluginv1.Actor) []string {
+	var ids []string
+	if a.GetEmail() != "" {
+		ids = append(ids, a.GetEmail())
+	}
+	if u := a.GetUsername(); u != "" && !strings.HasPrefix(strings.ToLower(u), idNamespace) {
+		ids = append(ids, system+":"+u)
+	}
+	if a.GetId() != "" {
+		ids = append(ids, system+":"+idNamespace+a.GetId())
+	}
+	return ids
+}
+
+// FirstMatch picks the identity to store for an input: the first one found in
+// the tasks role, else in the questions role, else in a repo users list, else
+// the first one. The stored identity is all a later run sees of the actor, so
+// the strongest permission must survive.
+func FirstMatch(p config.Project, actors []string) string {
+	var repoUsers []string
+	for _, r := range p.Repos {
+		repoUsers = append(repoUsers, r.Users...)
+	}
+	for _, list := range [][]string{p.Roles.Tasks, p.Roles.Questions, repoUsers} {
+		for _, a := range actors {
+			if contains(list, a) {
+				return a
+			}
+		}
+	}
+	if len(actors) > 0 {
+		return actors[0]
+	}
+	return ""
+}
+
+// hasRole reports whether any identity is in list.
+func hasRole(list, actors []string) bool {
+	return slices.ContainsFunc(actors, func(a string) bool { return contains(list, a) })
 }
 
 func contains(list []string, s string) bool {
 	return slices.ContainsFunc(list, func(x string) bool { return strings.EqualFold(x, s) })
 }
 
-func allContain(list, emails []string) bool {
-	return !slices.ContainsFunc(emails, func(e string) bool { return !contains(list, e) })
+func allContain(list []string, actors [][]string) bool {
+	return !slices.ContainsFunc(actors, func(a []string) bool { return !hasRole(list, a) })
 }
 
 func hasAny(labels, wanted []string) bool {

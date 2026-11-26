@@ -5,8 +5,13 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 )
 
+var (
+	roleSystemPattern = regexp.MustCompile(`^[a-z]+:.+$`)
+	roleEmailPattern  = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
+)
 var trackerKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{0,9}$`)
 
 // FieldError names the invalid field (JSON path notation) and why.
@@ -60,5 +65,40 @@ func ValidateProject(t Tenant, p Project) []FieldError {
 			add(fmt.Sprintf("milestones[%d]", i), "unknown milestone %q", m)
 		}
 	}
+	validateStatusMap(p, add)
+	if rt := p.EffectiveReviewTrigger(); rt != ReviewTriggerMention && rt != ReviewTriggerAny {
+		add("reviewTrigger", "must be %q or %q", ReviewTriggerMention, ReviewTriggerAny)
+	}
+	if ct := p.EffectiveCommentTrigger(); ct != CommentTriggerMention && ct != CommentTriggerAny {
+		add("commentTrigger", "must be %q or %q", CommentTriggerMention, CommentTriggerAny)
+	}
+	for _, list := range []struct {
+		field   string
+		entries []string
+	}{{"roles.questions", p.Roles.Questions}, {"roles.tasks", p.Roles.Tasks}} {
+		for i, e := range list.entries {
+			if !roleEmailPattern.MatchString(e) && !roleSystemPattern.MatchString(e) {
+				add(fmt.Sprintf("%s[%d]", list.field, i), "%q is neither an e-mail address nor <system>:<id>", e)
+			}
+		}
+	}
 	return errs
+}
+
+func validateStatusMap(p Project, add func(field, format string, args ...any)) {
+	states := StatusMapStates()
+	keys := make([]string, 0, len(p.StatusMap))
+	for state := range p.StatusMap {
+		keys = append(keys, state)
+	}
+	sort.Strings(keys)
+	for _, state := range keys {
+		status := p.StatusMap[state]
+		switch {
+		case !slices.Contains(states, state):
+			add("statusMap."+state, "unknown state %q", state)
+		case strings.TrimSpace(status) == "":
+			add("statusMap."+state, "status name must not be empty")
+		}
+	}
 }

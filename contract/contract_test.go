@@ -8,6 +8,7 @@ import (
 	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -79,5 +80,40 @@ func TestRequestsCarryCredentials(t *testing.T) {
 	}
 	if n := len(issue.GetCredentials()); n != 2 {
 		t.Fatalf("credentials = %d", n)
+	}
+}
+
+func TestV04FieldNumbersAreStable(t *testing.T) {
+	cases := []struct {
+		msg   protoreflect.MessageDescriptor
+		field protoreflect.Name
+		num   protoreflect.FieldNumber
+	}{
+		{(&pluginv1.Actor{}).ProtoReflect().Descriptor(), "username", 4},
+		{(&pluginv1.Capabilities{}).ProtoReflect().Descriptor(), "connect_fields", 8},
+		{(&pluginv1.Capabilities{}).ProtoReflect().Descriptor(), "supports_review_events", 9},
+		{(&pluginv1.CompleteConnectRequest{}).ProtoReflect().Descriptor(), "fields", 3},
+		{(&pluginv1.RepoCredentials{}).ProtoReflect().Descriptor(), "tokens", 5},
+		{(&pluginv1.RepoCredentials{}).ProtoReflect().Descriptor(), "credential_id", 6},
+	}
+	for _, c := range cases {
+		f := c.msg.Fields().ByName(c.field)
+		if f == nil || f.Number() != c.num {
+			t.Errorf("%s.%s: got %v, want number %d", c.msg.Name(), c.field, f, c.num)
+		}
+	}
+}
+
+func TestV04ServicesHaveNewRPCs(t *testing.T) {
+	tracker := pluginv1.File_orchivio_plugin_v1_tracker_proto.Services().ByName("TrackerAdapter")
+	if tracker.Methods().ByName("SetStatus") == nil {
+		t.Error("TrackerAdapter.SetStatus missing")
+	}
+	host := pluginv1.File_orchivio_plugin_v1_codehost_proto.Services().ByName("CodeHostAdapter")
+	if m := host.Methods().ByName("StreamEvents"); m == nil || !m.IsStreamingServer() {
+		t.Error("CodeHostAdapter.StreamEvents must be server-streaming")
+	}
+	if host.Methods().ByName("RevokeRepoCredentials") == nil {
+		t.Error("CodeHostAdapter.RevokeRepoCredentials missing")
 	}
 }

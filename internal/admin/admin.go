@@ -39,6 +39,9 @@ type Project struct {
 	Roles                        config.Roles
 	MaxDiffLines                 int
 	Milestones                   []string
+	StatusMap                    map[string]string
+	ReviewTrigger                string
+	CommentTrigger               string
 	Version                      int64
 	CreatedAt, UpdatedAt         time.Time
 }

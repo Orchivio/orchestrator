@@ -31,6 +31,9 @@ type fakeConnector struct {
 	completed   admin.Completed
 	completeErr error
 	beginErr    error
+	forms       map[string][]admin.FormField // by adapter
+	formErr     error
+	formCalls   int
 }
 
 func (f *fakeConnector) BeginConnect(_ context.Context, _, _, _, _, state string) (string, error) {
@@ -42,6 +45,17 @@ func (f *fakeConnector) BeginConnect(_ context.Context, _, _, _, _, state string
 
 func (f *fakeConnector) CompleteConnect(context.Context, string, string, string, map[string]string) (admin.Completed, error) {
 	return f.completed, f.completeErr
+}
+
+func (f *fakeConnector) Form(_ context.Context, adapter, _ string) ([]admin.FormField, error) {
+	return f.forms[adapter], nil
+}
+
+func (f *fakeConnector) CompleteForm(context.Context, string, string, map[string]string) (admin.Completed, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.formCalls++
+	return f.completed, f.formErr
 }
 
 func (f *fakeConnector) Refresh(context.Context, string, string, []byte, *time.Time) (admin.Completed, error) {
@@ -290,5 +304,122 @@ func TestCallbackAnswersOnlyGetAndKeepsStateOtherwise(t *testing.T) {
 	}
 	if rec := e.callback("github", e.conn.state); rec.Code != 200 {
 		t.Fatal("state consumed by HEAD:", rec.Code, rec.Body.String())
+	}
+}
+
+const (
+	formSecret = "s3cr3t-xyz"
+	formPath   = "/api/v1/tenants/acme/connections/github/form"
+)
+
+func newFormEnv(t *testing.T) *connEnv {
+	t.Helper()
+	e := newConnEnv(t)
+	e.conn.forms = map[string][]admin.FormField{"github": {
+		{Name: "url", Label: "URL", Required: true},
+		{Name: "token", Label: "Token", Secret: true, Required: true},
+	}}
+	e.conn.completed = admin.Completed{Data: []byte("plain-cred"), Label: "Acme GH", ExternalID: "form1"}
+	return e
+}
+
+func formBody(token string) string {
+	return `{"fields":{"url":"https://h.example","token":"` + token + `"}}`
+}
+
+func TestFormListsAdapterFields(t *testing.T) {
+	e := newFormEnv(t)
+	rec := e.do("GET", formPath, "")
+	want := `{"fields":[{"name":"url","label":"URL","secret":false,"required":true},{"name":"token","label":"Token","secret":true,"required":true}]}`
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestFormConnectCreatesConnection(t *testing.T) {
+	e := newFormEnv(t)
+	rec := e.do("POST", formPath, formBody(formSecret))
+	got := decode(t, rec)
+	if rec.Code != 201 || got["kind"] != "codehost" || got["adapter"] != "github" || got["label"] != "Acme GH" || got["status"] != "active" {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	id := uuid.MustParse(got["id"].(string))
+	sealed, err := e.store.ConnectionCredential(t.Context(), id)
+	if err != nil || bytes.Contains(sealed.Data, []byte("plain-cred")) || len(sealed.Data) == 0 {
+		t.Fatalf("credential not sealed: %v", err)
+	}
+}
+
+func TestFormConnectMissingRequiredField(t *testing.T) {
+	e := newFormEnv(t)
+	rec := e.do("POST", formPath, `{"fields":{"url":"https://h.example"}}`)
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), `"field":"fields.token"`) || e.conn.formCalls != 0 {
+		t.Fatal(rec.Code, rec.Body.String(), e.conn.formCalls)
+	}
+}
+
+func TestFormConnectOAuthOnlyAdapterIs404(t *testing.T) {
+	e := newFormEnv(t)
+	if rec := e.do("GET", "/api/v1/tenants/acme/connections/linear/form", ""); rec.Code != 404 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if rec := e.do("POST", "/api/v1/tenants/acme/connections/linear/form", formBody("x")); rec.Code != 404 || e.conn.formCalls != 0 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestFormConnectNeverEchoesSecret(t *testing.T) {
+	e := newFormEnv(t)
+	e.conn.formErr = &admin.RejectedError{Reason: "token invalid"}
+	rec := e.do("POST", formPath, formBody(formSecret))
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), "token invalid") {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	e.conn.formErr = errors.New("adapter broke")
+	rec2 := e.do("POST", formPath, formBody(formSecret))
+	if rec2.Code != 500 && rec2.Code != 502 {
+		t.Fatal(rec2.Code, rec2.Body.String())
+	}
+	if strings.Contains(rec.Body.String()+rec2.Body.String()+e.logs.String(), formSecret) {
+		t.Fatalf("secret leaked: %s %s %s", rec.Body.String(), rec2.Body.String(), e.logs.String())
+	}
+}
+
+func TestFormConnectExclusiveAcrossTenants(t *testing.T) {
+	e := newFormEnv(t)
+	if rec := e.do("POST", formPath, formBody("a")); rec.Code != 201 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if rec := e.do("POST", "/api/v1/tenants/beta/connections/github/form", formBody("b")); rec.Code != 409 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestFormConnectReplacesByExternalID(t *testing.T) {
+	e := newFormEnv(t)
+	rec := e.do("POST", formPath, formBody("a"))
+	first := decode(t, rec)
+	if rec.Code != 201 || rec.Header().Get("Location") == "" {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	id := uuid.MustParse(first["id"].(string))
+	before, _ := e.store.ConnectionCredential(t.Context(), id)
+	e.store.conns[id].c.Status = admin.StatusNeedsReauth
+	e.conn.completed.Data = []byte("plain-cred-2")
+	rec = e.do("POST", formPath, formBody("b"))
+	got := decode(t, rec)
+	after, _ := e.store.ConnectionCredential(t.Context(), id)
+	if rec.Code != 200 || rec.Header().Get("Location") != "" || got["id"] != first["id"] || got["status"] != "active" ||
+		bytes.Equal(before.Data, after.Data) {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestFormConnectUnauthenticatedIs422WithoutSecret(t *testing.T) {
+	e := newFormEnv(t)
+	e.conn.formErr = errors.Join(admin.ErrCredentialRejected, errors.New("bad "+formSecret))
+	rec := e.do("POST", formPath, formBody(formSecret))
+	if rec.Code != 422 || strings.Contains(rec.Body.String()+e.logs.String(), formSecret) {
+		t.Fatal(rec.Code, rec.Body.String())
 	}
 }

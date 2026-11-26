@@ -61,8 +61,9 @@ func (s *store) GetRun(_ context.Context, id uuid.UUID) (*router.Run, error) {
 	}
 	return nil, nil
 }
-func (s *store) UpdateRun(_ context.Context, r router.Run) error { s.runs[r.ID] = &r; return nil }
-func (s *store) AddInput(context.Context, router.Input) error    { return nil }
+func (s *store) UpdateRun(_ context.Context, r router.Run) error                  { s.runs[r.ID] = &r; return nil }
+func (s *store) AddInput(context.Context, router.Input) error                     { return nil }
+func (s *store) IssuedCredentialIDs(context.Context, uuid.UUID) ([]string, error) { return nil, nil }
 func (s *store) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ string, _ any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -75,11 +76,16 @@ type host struct{}
 func (host) IssueRepoCredentials(context.Context, string, []string, bool) (*pluginv1.RepoCredentials, error) {
 	return &pluginv1.RepoCredentials{Token: "t"}, nil
 }
+func (host) RevokeRepoCredentials(context.Context, string, string) error { return nil }
 func (host) OpenPullRequest(context.Context, string, *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error) {
 	return &pluginv1.PullRequest{}, nil
 }
 
 type tracker struct{}
+
+func (tracker) SetStatus(context.Context, string, string, string) error { return nil }
+
+func (tracker) AdapterName(context.Context, string) (string, error) { return "fake", nil }
 
 func (tracker) GetTicket(context.Context, string, string) (*pluginv1.Ticket, error) {
 	return &pluginv1.Ticket{Title: "T"}, nil

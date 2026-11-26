@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -55,7 +56,7 @@ func mapErr(adapter, op string, err error) error {
 	switch st := status.Convert(err); st.Code() {
 	case codes.Unauthenticated:
 		return fmt.Errorf("%s at %s: %w: %w", op, adapter, admin.ErrCredentialRejected, err)
-	case codes.PermissionDenied: // the adapter's own explanation, e.g. GitHub's installation-admin check
+	case codes.InvalidArgument, codes.PermissionDenied: // the adapter's own explanation, e.g. GitHub's installation-admin check
 		return fmt.Errorf("%s at %s: %w", op, adapter, &admin.RejectedError{Reason: st.Message()})
 	case codes.FailedPrecondition:
 		return &admin.NotConnectedError{Reason: st.Message()}
@@ -89,6 +90,49 @@ func (c *connector) CompleteConnect(ctx context.Context, adapter, kind, redirect
 	done := completed(resp.GetCredential())
 	done.Label, done.ExternalID = resp.GetLabel(), resp.GetExternalId()
 	return done, nil
+}
+
+func (c *connector) Form(ctx context.Context, adapter, kind string) ([]admin.FormField, error) {
+	cl, err := c.client(ctx, adapter, kind)
+	if err != nil {
+		return nil, err
+	}
+	caps, err := cl.GetCapabilities(ctx, &pluginv1.GetCapabilitiesRequest{})
+	if err != nil {
+		return nil, mapErr(adapter, "get capabilities", err)
+	}
+	var fields []admin.FormField
+	for _, f := range caps.GetConnectFields() {
+		fields = append(fields, admin.FormField{Name: f.GetName(), Label: f.GetLabel(), Secret: f.GetSecret(), Required: f.GetRequired()})
+	}
+	return fields, nil
+}
+
+func (c *connector) CompleteForm(ctx context.Context, adapter, kind string, fields map[string]string) (admin.Completed, error) {
+	cl, err := c.client(ctx, adapter, kind)
+	if err != nil {
+		return admin.Completed{}, err
+	}
+	resp, err := cl.CompleteConnect(ctx, &pluginv1.CompleteConnectRequest{Fields: fields})
+	if err != nil {
+		return admin.Completed{}, mapErr(adapter, "complete connect", redact(err, fields))
+	}
+	done := completed(resp.GetCredential())
+	done.Label, done.ExternalID = resp.GetLabel(), resp.GetExternalId()
+	return done, nil
+}
+
+// redact keeps the code of err but blanks every submitted value in its message,
+// so an adapter that echoes a secret cannot leak it into logs or responses.
+func redact(err error, fields map[string]string) error {
+	st := status.Convert(err)
+	msg := st.Message()
+	for _, v := range fields {
+		if v != "" {
+			msg = strings.ReplaceAll(msg, v, "***")
+		}
+	}
+	return status.Error(st.Code(), msg)
 }
 
 func (c *connector) Refresh(ctx context.Context, adapter, kind string, data []byte, refreshAfter *time.Time) (admin.Completed, error) {

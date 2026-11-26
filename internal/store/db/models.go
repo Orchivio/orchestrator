@@ -61,6 +61,7 @@ type Input struct {
 	RunID          *uuid.UUID
 	CreatedAt      time.Time
 	FromAgent      bool
+	ActorIds       []string
 }
 
 type OauthState struct {

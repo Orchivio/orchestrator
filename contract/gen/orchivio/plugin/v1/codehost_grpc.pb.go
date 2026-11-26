@@ -19,14 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CodeHostAdapter_GetCapabilities_FullMethodName      = "/orchivio.plugin.v1.CodeHostAdapter/GetCapabilities"
-	CodeHostAdapter_IssueRepoCredentials_FullMethodName = "/orchivio.plugin.v1.CodeHostAdapter/IssueRepoCredentials"
-	CodeHostAdapter_OpenPullRequest_FullMethodName      = "/orchivio.plugin.v1.CodeHostAdapter/OpenPullRequest"
-	CodeHostAdapter_BeginConnect_FullMethodName         = "/orchivio.plugin.v1.CodeHostAdapter/BeginConnect"
-	CodeHostAdapter_CompleteConnect_FullMethodName      = "/orchivio.plugin.v1.CodeHostAdapter/CompleteConnect"
-	CodeHostAdapter_RefreshCredential_FullMethodName    = "/orchivio.plugin.v1.CodeHostAdapter/RefreshCredential"
-	CodeHostAdapter_Disconnect_FullMethodName           = "/orchivio.plugin.v1.CodeHostAdapter/Disconnect"
-	CodeHostAdapter_CheckAccess_FullMethodName          = "/orchivio.plugin.v1.CodeHostAdapter/CheckAccess"
+	CodeHostAdapter_GetCapabilities_FullMethodName       = "/orchivio.plugin.v1.CodeHostAdapter/GetCapabilities"
+	CodeHostAdapter_IssueRepoCredentials_FullMethodName  = "/orchivio.plugin.v1.CodeHostAdapter/IssueRepoCredentials"
+	CodeHostAdapter_StreamEvents_FullMethodName          = "/orchivio.plugin.v1.CodeHostAdapter/StreamEvents"
+	CodeHostAdapter_RevokeRepoCredentials_FullMethodName = "/orchivio.plugin.v1.CodeHostAdapter/RevokeRepoCredentials"
+	CodeHostAdapter_OpenPullRequest_FullMethodName       = "/orchivio.plugin.v1.CodeHostAdapter/OpenPullRequest"
+	CodeHostAdapter_BeginConnect_FullMethodName          = "/orchivio.plugin.v1.CodeHostAdapter/BeginConnect"
+	CodeHostAdapter_CompleteConnect_FullMethodName       = "/orchivio.plugin.v1.CodeHostAdapter/CompleteConnect"
+	CodeHostAdapter_RefreshCredential_FullMethodName     = "/orchivio.plugin.v1.CodeHostAdapter/RefreshCredential"
+	CodeHostAdapter_Disconnect_FullMethodName            = "/orchivio.plugin.v1.CodeHostAdapter/Disconnect"
+	CodeHostAdapter_CheckAccess_FullMethodName           = "/orchivio.plugin.v1.CodeHostAdapter/CheckAccess"
 )
 
 // CodeHostAdapterClient is the client API for CodeHostAdapter service.
@@ -35,6 +37,8 @@ const (
 type CodeHostAdapterClient interface {
 	GetCapabilities(ctx context.Context, in *GetCapabilitiesRequest, opts ...grpc.CallOption) (*Capabilities, error)
 	IssueRepoCredentials(ctx context.Context, in *IssueRepoCredentialsRequest, opts ...grpc.CallOption) (*RepoCredentials, error)
+	StreamEvents(ctx context.Context, in *StreamCodeHostEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CodeHostEvent], error)
+	RevokeRepoCredentials(ctx context.Context, in *RevokeRepoCredentialsRequest, opts ...grpc.CallOption) (*RevokeRepoCredentialsResponse, error)
 	OpenPullRequest(ctx context.Context, in *OpenPullRequestRequest, opts ...grpc.CallOption) (*PullRequest, error)
 	BeginConnect(ctx context.Context, in *BeginConnectRequest, opts ...grpc.CallOption) (*BeginConnectResponse, error)
 	CompleteConnect(ctx context.Context, in *CompleteConnectRequest, opts ...grpc.CallOption) (*CompleteConnectResponse, error)
@@ -65,6 +69,35 @@ func (c *codeHostAdapterClient) IssueRepoCredentials(ctx context.Context, in *Is
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RepoCredentials)
 	err := c.cc.Invoke(ctx, CodeHostAdapter_IssueRepoCredentials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *codeHostAdapterClient) StreamEvents(ctx context.Context, in *StreamCodeHostEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CodeHostEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &CodeHostAdapter_ServiceDesc.Streams[0], CodeHostAdapter_StreamEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamCodeHostEventsRequest, CodeHostEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CodeHostAdapter_StreamEventsClient = grpc.ServerStreamingClient[CodeHostEvent]
+
+func (c *codeHostAdapterClient) RevokeRepoCredentials(ctx context.Context, in *RevokeRepoCredentialsRequest, opts ...grpc.CallOption) (*RevokeRepoCredentialsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeRepoCredentialsResponse)
+	err := c.cc.Invoke(ctx, CodeHostAdapter_RevokeRepoCredentials_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +170,8 @@ func (c *codeHostAdapterClient) CheckAccess(ctx context.Context, in *CheckAccess
 type CodeHostAdapterServer interface {
 	GetCapabilities(context.Context, *GetCapabilitiesRequest) (*Capabilities, error)
 	IssueRepoCredentials(context.Context, *IssueRepoCredentialsRequest) (*RepoCredentials, error)
+	StreamEvents(*StreamCodeHostEventsRequest, grpc.ServerStreamingServer[CodeHostEvent]) error
+	RevokeRepoCredentials(context.Context, *RevokeRepoCredentialsRequest) (*RevokeRepoCredentialsResponse, error)
 	OpenPullRequest(context.Context, *OpenPullRequestRequest) (*PullRequest, error)
 	BeginConnect(context.Context, *BeginConnectRequest) (*BeginConnectResponse, error)
 	CompleteConnect(context.Context, *CompleteConnectRequest) (*CompleteConnectResponse, error)
@@ -158,6 +193,12 @@ func (UnimplementedCodeHostAdapterServer) GetCapabilities(context.Context, *GetC
 }
 func (UnimplementedCodeHostAdapterServer) IssueRepoCredentials(context.Context, *IssueRepoCredentialsRequest) (*RepoCredentials, error) {
 	return nil, status.Error(codes.Unimplemented, "method IssueRepoCredentials not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) StreamEvents(*StreamCodeHostEventsRequest, grpc.ServerStreamingServer[CodeHostEvent]) error {
+	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
+}
+func (UnimplementedCodeHostAdapterServer) RevokeRepoCredentials(context.Context, *RevokeRepoCredentialsRequest) (*RevokeRepoCredentialsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeRepoCredentials not implemented")
 }
 func (UnimplementedCodeHostAdapterServer) OpenPullRequest(context.Context, *OpenPullRequestRequest) (*PullRequest, error) {
 	return nil, status.Error(codes.Unimplemented, "method OpenPullRequest not implemented")
@@ -230,6 +271,35 @@ func _CodeHostAdapter_IssueRepoCredentials_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CodeHostAdapterServer).IssueRepoCredentials(ctx, req.(*IssueRepoCredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CodeHostAdapter_StreamEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamCodeHostEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(CodeHostAdapterServer).StreamEvents(m, &grpc.GenericServerStream[StreamCodeHostEventsRequest, CodeHostEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CodeHostAdapter_StreamEventsServer = grpc.ServerStreamingServer[CodeHostEvent]
+
+func _CodeHostAdapter_RevokeRepoCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeRepoCredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodeHostAdapterServer).RevokeRepoCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodeHostAdapter_RevokeRepoCredentials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodeHostAdapterServer).RevokeRepoCredentials(ctx, req.(*RevokeRepoCredentialsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -358,6 +428,10 @@ var CodeHostAdapter_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CodeHostAdapter_IssueRepoCredentials_Handler,
 		},
 		{
+			MethodName: "RevokeRepoCredentials",
+			Handler:    _CodeHostAdapter_RevokeRepoCredentials_Handler,
+		},
+		{
 			MethodName: "OpenPullRequest",
 			Handler:    _CodeHostAdapter_OpenPullRequest_Handler,
 		},
@@ -382,6 +456,12 @@ var CodeHostAdapter_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CodeHostAdapter_CheckAccess_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamEvents",
+			Handler:       _CodeHostAdapter_StreamEvents_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "orchivio/plugin/v1/codehost.proto",
 }

@@ -224,6 +224,64 @@ paths:
         "422": {$ref: "#/components/responses/Invalid"}
         "502": {$ref: "#/components/responses/AdapterFailed"}
         "503": {$ref: "#/components/responses/Unavailable"}
+  /tenants/{slug}/connections/{adapter}/form:
+    parameters:
+      - {$ref: "#/components/parameters/Slug"}
+      - {name: adapter, in: path, required: true, schema: {type: string}}
+    get:
+      summary: The form to connect the tenant to an adapter without OAuth
+      description: 404 if the adapter connects only through OAuth.
+      operationId: getConnectForm
+      responses:
+        "200":
+          description: Form fields
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [fields]
+                properties:
+                  fields:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, label, secret, required]
+                      properties:
+                        name: {type: string}
+                        label: {type: string}
+                        secret: {type: boolean, description: Render as a password input; never echoed}
+                        required: {type: boolean}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "502": {$ref: "#/components/responses/AdapterFailed"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+    post:
+      summary: Connect the tenant to an adapter with form values
+      description: >
+        Fields are those of the form. A missing required field or values the
+        adapter refuses give 422 (field fields.<name> or fields). Values are
+        never echoed or logged. A connection to the same account is replaced
+        in place (200); a new one is created (201, with Location).
+      operationId: connectByForm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fields]
+              properties:
+                fields: {type: object, additionalProperties: {type: string}}
+      responses:
+        "200": {description: Existing connection of the same account replaced, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
+        "201": {description: Connection created, content: {application/json: {schema: {$ref: "#/components/schemas/Connection"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/Invalid"}
+        "502": {$ref: "#/components/responses/AdapterFailed"}
+        "503": {$ref: "#/components/responses/Unavailable"}
   /tenants/{slug}/connections/{id}:
     parameters: [{$ref: "#/components/parameters/Slug"}, {$ref: "#/components/parameters/Id"}]
     get:
@@ -396,8 +454,8 @@ components:
       type: object
       additionalProperties: false
       properties:
-        questions: {type: array, items: {type: string}, description: E-mail addresses}
-        tasks: {type: array, items: {type: string}, description: E-mail addresses}
+        questions: {type: array, items: {type: string}, description: "E-mail addresses, <system>:<username> or <system>:id:<id> identities, e.g. acme:jdoe or acme:id:12345. Prefer <system>:id:<id>: ids are immutable, usernames and e-mails can change"}
+        tasks: {type: array, items: {type: string}, description: "E-mail addresses, <system>:<username> or <system>:id:<id> identities, e.g. acme:jdoe or acme:id:12345. Prefer <system>:id:<id>: ids are immutable, usernames and e-mails can change"}
     Project:
       type: object
       additionalProperties: false
@@ -412,6 +470,17 @@ components:
         roles: {$ref: "#/components/schemas/Roles"}
         maxDiffLines: {type: integer}
         milestones: {type: array, items: {type: string}}
+        statusMap:
+          type: object
+          description: Tracker status name per run state; states without an entry leave the status alone. A blank (whitespace-only) name is rejected. `cancelled` is accepted but currently never emitted, since runs cannot be cancelled yet
+          propertyNames: {enum: [running, waiting_for_input, pushing, succeeded, failed, cancelled]}
+          additionalProperties: {type: string, minLength: 1}
+        reviewTrigger: {type: string, enum: [mention, any], default: mention}
+        commentTrigger:
+          type: string
+          enum: [mention, any]
+          default: any
+          description: Which tracker comments count in a ticket with a conversation. `any` takes every comment as an answer or follow-up; `mention` ignores comments without a bot mention, also while a run waits for input. Without a conversation a comment always needs a mention
         version: {type: integer, format: int64, readOnly: true}
         createdAt: {type: string, format: date-time, readOnly: true}
         updatedAt: {type: string, format: date-time, readOnly: true}

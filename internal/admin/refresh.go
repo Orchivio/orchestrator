@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // refreshLease keeps a claimed connection from being claimed again while it
@@ -67,6 +69,29 @@ func (s *Service) refreshOne(ctx context.Context, c Connection, sealed SealedCre
 		return false
 	}
 	return s.stored(ctx, c, SealedCredential{KeyID: s.box.KeyID(), Data: renewed}, done.RefreshAfter, StatusActive)
+}
+
+// MarkNeedsReauth stops using a connection whose credential an adapter just
+// rejected at runtime, without waiting for the next refresh. Idempotent; a
+// connection that is gone, no longer active or changed since (a reconnect
+// stored a new credential) is left alone. OnChange runs if it stored.
+func (s *Service) MarkNeedsReauth(ctx context.Context, tenant string, connectionID uuid.UUID) error {
+	c, err := s.store.GetConnection(ctx, tenant, connectionID)
+	if errors.Is(err, ErrNotFound) || (err == nil && c.Status != StatusActive) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	sealed, err := s.store.ConnectionCredential(ctx, connectionID)
+	if err != nil {
+		return err
+	}
+	s.log.Warn("connection credential rejected by adapter, needs re-authorization", "connection", c.ID, "tenant", tenant, "adapter", c.Adapter)
+	if s.stored(ctx, c, sealed, c.RefreshAfter, StatusNeedsReauth) {
+		s.changed(ctx)
+	}
+	return nil
 }
 
 // stored writes the refresh result unless c changed since its claim (e.g. a

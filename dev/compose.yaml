@@ -21,7 +21,7 @@ services:
     image: ghcr.io/orchivio/orchestrator:${ORCHIVIO_VERSION:-main}
     environment:
       DATABASE_URL: postgres://orchivio:orchivio@postgres:5432/orchivio?sslmode=disable
-      ORCHIVIO_ADAPTERS: linear=adapter-linear:7101,github=adapter-github:7201
+      ORCHIVIO_ADAPTERS: linear=adapter-linear:7101,github=adapter-github:7201${ORCHIVIO_EXTRA_ADAPTERS:-}
       ORCHIVIO_BOOTSTRAP_TOKEN: ${ORCHIVIO_BOOTSTRAP_TOKEN:-}
       ORCHIVIO_SECRET_KEY: ${ORCHIVIO_SECRET_KEY}
       ORCHIVIO_GRPC_ADDR: 0.0.0.0:7070
@@ -54,6 +54,51 @@ services:
       GITHUB_CLIENT_SECRET_REF: ${GITHUB_CLIENT_SECRET_REF}
       GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
       ORCHIVIO_GRPC_ADDR: 0.0.0.0:7201
+
+  # Profile jira-gitlab (COMPOSE_PROFILES=jira-gitlab): extra adapters; the
+  # orchestrator learns them through ORCHIVIO_EXTRA_ADAPTERS (see README).
+  adapter-jira-cloud:
+    image: ghcr.io/orchivio/adapter-jira:${ORCHIVIO_VERSION:-main}
+    profiles: [jira-gitlab]
+    environment:
+      JIRA_DEPLOYMENT: cloud
+      JIRA_POLL_INTERVAL: ${JIRA_POLL_INTERVAL:-30s}
+      ORCHIVIO_GRPC_ADDR: 0.0.0.0:7301
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+      SSL_CERT_DIR: ${SSL_CERT_DIR:-}
+
+  adapter-jira-dc:
+    image: ghcr.io/orchivio/adapter-jira:${ORCHIVIO_VERSION:-main}
+    profiles: [jira-gitlab]
+    environment:
+      JIRA_DEPLOYMENT: datacenter
+      JIRA_URL: ${JIRA_URL:-}
+      JIRA_POLL_INTERVAL: ${JIRA_POLL_INTERVAL:-30s}
+      ORCHIVIO_GRPC_ADDR: 0.0.0.0:7302
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+      SSL_CERT_DIR: ${SSL_CERT_DIR:-}
+
+  adapter-gitlab:
+    image: ghcr.io/orchivio/adapter-gitlab:${ORCHIVIO_VERSION:-main}
+    profiles: [jira-gitlab]
+    environment:
+      GITLAB_URL: ${GITLAB_URL:-}
+      GITLAB_POLL_INTERVAL: ${GITLAB_POLL_INTERVAL:-30s}
+      ORCHIVIO_GRPC_ADDR: 0.0.0.0:7401
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+      SSL_CERT_DIR: ${SSL_CERT_DIR:-}
+
+  # Not included: jira-dc / gitlab-ce containers (large images). Point JIRA_URL
+  # and GITLAB_URL at existing instances instead.
 
   # Credential/egress proxy: the only container on orchivio-sandbox with a way out.
   proxy:

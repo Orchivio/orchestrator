@@ -36,6 +36,9 @@ type fakeConnector struct {
 	denied                map[string]bool // items CheckAccess denies
 	checkErr              error
 	checks                []checkCall
+	form                  []admin.FormField
+	formErr               error
+	formCalls             int
 }
 
 type checkCall struct {
@@ -57,6 +60,17 @@ func (f *fakeConnector) CompleteConnect(_ context.Context, adapter, kind, redire
 	f.completeCalls++
 	f.redirect, f.kind = redirectURI, kind
 	return f.completed, f.completeErr
+}
+
+func (f *fakeConnector) Form(context.Context, string, string) ([]admin.FormField, error) {
+	return f.form, nil
+}
+
+func (f *fakeConnector) CompleteForm(context.Context, string, string, map[string]string) (admin.Completed, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.formCalls++
+	return f.completed, f.formErr
 }
 
 func (f *fakeConnector) Refresh(ctx context.Context, _, _ string, data []byte, _ *time.Time) (admin.Completed, error) {
@@ -454,5 +468,33 @@ func TestRefusedTenantDeleteKeepsConnections(t *testing.T) {
 	}
 	if len(e.conn.disconnected) != 0 || e.store.conns[c.ID].dead {
 		t.Fatalf("disconnected %d dead %v", len(e.conn.disconnected), e.store.conns[c.ID].dead)
+	}
+}
+
+func TestFormConnectStoresLikeCallbackAndSwitchesTracker(t *testing.T) {
+	e := newConnEnv(t)
+	e.conn.form = []admin.FormField{{Name: "token", Label: "Token", Secret: true, Required: true}}
+	e.conn.completed = admin.Completed{Data: []byte("plain-ws1"), Label: "WS1", ExternalID: "ws1"}
+	c, _, err := e.svc.FormConnect(ctx, "acme", "linear", map[string]string{"token": "t"})
+	if err != nil || c.Kind != admin.KindTracker || c.Status != admin.StatusActive {
+		t.Fatal(c, err)
+	}
+	e.conn.completed.ExternalID = "ws2"
+	c2, _, err := e.svc.FormConnect(ctx, "acme", "linear", map[string]string{"token": "t"})
+	if err != nil || c2.ID == c.ID {
+		t.Fatal(c2, err)
+	}
+	if _, err := e.svc.GetConnection(ctx, "acme", c.ID); !errors.Is(err, admin.ErrNotFound) {
+		t.Fatalf("old tracker connection not replaced: %v", err)
+	}
+}
+
+func TestFormConnectRejectsUnknownFieldBeforeAdapter(t *testing.T) {
+	e := newConnEnv(t)
+	e.conn.form = []admin.FormField{{Name: "token", Required: true}}
+	_, _, err := e.svc.FormConnect(ctx, "acme", "github", map[string]string{"token": "t", "extra": "x"})
+	var ve *admin.ValidationError
+	if !errors.As(err, &ve) || ve.Fields[0].Field != "fields.extra" || e.conn.formCalls != 0 {
+		t.Fatal(err, e.conn.formCalls)
 	}
 }

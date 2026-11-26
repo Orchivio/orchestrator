@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,14 +27,15 @@ var connectRefresh = time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
 // connectServer answers the connection RPCs; name tells tracker and code host apart.
 type connectServer struct {
 	pluginv1.UnimplementedTrackerAdapterServer
-	pluginv1.UnimplementedCodeHostAdapterServer
 	name        string
 	completeErr error
 	disconnects [][]byte
+	fields      []*pluginv1.ConnectField
+	gotFields   map[string]string
 }
 
 func (s *connectServer) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
-	return &pluginv1.Capabilities{ContractVersion: contractVersion, AdapterName: s.name}, nil
+	return &pluginv1.Capabilities{ContractVersion: contractVersion, AdapterName: s.name, ConnectFields: s.fields}, nil
 }
 
 func (s *connectServer) BeginConnect(_ context.Context, r *pluginv1.BeginConnectRequest) (*pluginv1.BeginConnectResponse, error) {
@@ -41,6 +43,7 @@ func (s *connectServer) BeginConnect(_ context.Context, r *pluginv1.BeginConnect
 }
 
 func (s *connectServer) CompleteConnect(_ context.Context, r *pluginv1.CompleteConnectRequest) (*pluginv1.CompleteConnectResponse, error) {
+	s.gotFields = r.GetFields()
 	if s.completeErr != nil {
 		return nil, s.completeErr
 	}
@@ -67,13 +70,44 @@ func (s *connectServer) CheckAccess(_ context.Context, r *pluginv1.CheckAccessRe
 	return &pluginv1.CheckAccessResponse{Denied: denied}, nil
 }
 
+// codeHostServer exposes connectServer as a code host; a separate type is needed
+// because both services declare StreamEvents with different signatures.
+type codeHostServer struct {
+	pluginv1.UnimplementedCodeHostAdapterServer
+	s *connectServer
+}
+
+func (c codeHostServer) GetCapabilities(ctx context.Context, r *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
+	return c.s.GetCapabilities(ctx, r)
+}
+
+func (c codeHostServer) BeginConnect(ctx context.Context, r *pluginv1.BeginConnectRequest) (*pluginv1.BeginConnectResponse, error) {
+	return c.s.BeginConnect(ctx, r)
+}
+
+func (c codeHostServer) CompleteConnect(ctx context.Context, r *pluginv1.CompleteConnectRequest) (*pluginv1.CompleteConnectResponse, error) {
+	return c.s.CompleteConnect(ctx, r)
+}
+
+func (c codeHostServer) RefreshCredential(ctx context.Context, r *pluginv1.RefreshCredentialRequest) (*pluginv1.Credential, error) {
+	return c.s.RefreshCredential(ctx, r)
+}
+
+func (c codeHostServer) Disconnect(ctx context.Context, r *pluginv1.DisconnectRequest) (*pluginv1.DisconnectResponse, error) {
+	return c.s.Disconnect(ctx, r)
+}
+
+func (c codeHostServer) CheckAccess(ctx context.Context, r *pluginv1.CheckAccessRequest) (*pluginv1.CheckAccessResponse, error) {
+	return c.s.CheckAccess(ctx, r)
+}
+
 func newTestConnector(t *testing.T) (admin.Connector, *connectServer, *connectServer) {
 	t.Helper()
 	tr, ch := &connectServer{name: "linear"}, &connectServer{name: "github"}
 	lisT, lisC := bufconn.Listen(1<<20), bufconn.Listen(1<<20)
 	srvT, srvC := grpc.NewServer(), grpc.NewServer()
 	pluginv1.RegisterTrackerAdapterServer(srvT, tr)
-	pluginv1.RegisterCodeHostAdapterServer(srvC, ch)
+	pluginv1.RegisterCodeHostAdapterServer(srvC, codeHostServer{s: ch})
 	go func() { _ = srvT.Serve(lisT) }()
 	go func() { _ = srvC.Serve(lisC) }()
 	t.Cleanup(srvT.Stop)
@@ -145,5 +179,34 @@ func TestConnectorMapsAdapterErrors(t *testing.T) {
 		if _, err := c.CompleteConnect(ctx, "github", admin.KindCodeHost, "http://cb", nil); !tc.check(err) {
 			t.Errorf("%v: err = %v", tc.code, err)
 		}
+	}
+}
+
+func TestConnectorFormListsFieldsAndSendsValues(t *testing.T) {
+	c, _, ch := newTestConnector(t)
+	ch.fields = []*pluginv1.ConnectField{{Name: "token", Label: "Token", Secret: true, Required: true}}
+	form, err := c.Form(t.Context(), "github", admin.KindCodeHost)
+	if err != nil || len(form) != 1 || form[0] != (admin.FormField{Name: "token", Label: "Token", Secret: true, Required: true}) {
+		t.Fatal(form, err)
+	}
+	done, err := c.CompleteForm(t.Context(), "github", admin.KindCodeHost, map[string]string{"token": "abc"})
+	if err != nil || ch.gotFields["token"] != "abc" || string(done.Data) != "cred" {
+		t.Fatal(done, err, ch.gotFields)
+	}
+}
+
+func TestConnectorCompleteFormRedactsSecretsAndMapsInvalidArgument(t *testing.T) {
+	c, _, ch := newTestConnector(t)
+	fields := map[string]string{"token": "s3cr3t-xyz"}
+	ch.completeErr = status.Error(codes.InvalidArgument, "token bad")
+	_, err := c.CompleteForm(t.Context(), "github", admin.KindCodeHost, fields)
+	var re *admin.RejectedError
+	if !errors.As(err, &re) || re.Reason != "token bad" {
+		t.Fatal(err)
+	}
+	ch.completeErr = status.Error(codes.Internal, "boom s3cr3t-xyz")
+	_, err = c.CompleteForm(t.Context(), "github", admin.KindCodeHost, fields)
+	if err == nil || strings.Contains(err.Error(), "s3cr3t-xyz") || !errors.Is(err, admin.ErrAdapter) {
+		t.Fatal(err)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	pluginv1 "github.com/orchivio/orchestrator/contract/gen/orchivio/plugin/v1"
 	"github.com/orchivio/orchestrator/internal/config"
 )
@@ -46,23 +48,38 @@ type tenantStream struct {
 func run(ctx context.Context, cfg *config.Sync, reg *Registry,
 	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger,
 	initial, limit time.Duration) {
+	supervise(ctx, cfg, streamKeys, func(runCtx, ctx context.Context, tenant string, keys []string) (bool, error) {
+		return streamOnce(runCtx, ctx, reg, tenant, keys, handle, log)
+	}, "tracker", log, initial, limit)
+}
+
+// streamFunc reads one stream of a tenant until it ends; received reports
+// whether any event arrived. Events are handled with runCtx, the stream
+// itself lives in ctx.
+type streamFunc func(runCtx, ctx context.Context, tenant string, keys []string) (received bool, err error)
+
+// supervise keeps one stream per tenant that want returns, restarting it
+// when its key changes and stopping it when the tenant drops out. It returns
+// on ctx done once all streams have stopped.
+func supervise(ctx context.Context, cfg *config.Sync, want func(*config.Config) map[string]streamKey,
+	stream streamFunc, kind string, log *slog.Logger, initial, limit time.Duration) {
 	var wg sync.WaitGroup
 	streams := map[string]tenantStream{}
 	apply := func() {
-		want := streamKeys(cfg.Current())
+		wanted := want(cfg.Current())
 		for tenant, s := range streams {
-			if w, ok := want[tenant]; !ok || !s.key.equal(w) {
+			if w, ok := wanted[tenant]; !ok || !s.key.equal(w) {
 				s.cancel()
 				delete(streams, tenant)
 			}
 		}
-		for tenant, key := range want {
+		for tenant, key := range wanted {
 			if _, ok := streams[tenant]; ok {
 				continue
 			}
 			sctx, cancel := context.WithCancel(ctx)
 			streams[tenant] = tenantStream{key: key, cancel: cancel}
-			wg.Go(func() { ingestTenant(ctx, sctx, reg, tenant, key.keys, handle, log, initial, limit) })
+			wg.Go(func() { ingestTenant(ctx, sctx, tenant, key.keys, stream, kind, log, initial, limit) })
 		}
 	}
 	apply()
@@ -97,19 +114,18 @@ func streamKeys(c *config.Config) map[string]streamKey {
 
 // ingestTenant reconnects until ctx (the stream's) ends. Events are handled
 // with runCtx, so a key change that cancels ctx never aborts a half-handled event.
-func ingestTenant(runCtx, ctx context.Context, reg *Registry, tenant string, keys []string,
-	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger,
-	initial, limit time.Duration) {
+func ingestTenant(runCtx, ctx context.Context, tenant string, keys []string, stream streamFunc, kind string,
+	log *slog.Logger, initial, limit time.Duration) {
 	backoff := initial
 	for ctx.Err() == nil {
-		received, err := streamOnce(runCtx, ctx, reg, tenant, keys, handle, log)
+		received, err := stream(runCtx, ctx, tenant, keys)
 		if received {
 			backoff = initial
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		log.Warn("tracker stream ended, reconnecting", "tenant", tenant, "error", err, "backoff", backoff)
+		log.Warn("adapter stream ended, reconnecting", "kind", kind, "tenant", tenant, "error", err, "backoff", backoff)
 		select {
 		case <-ctx.Done():
 			return
@@ -123,25 +139,32 @@ func ingestTenant(runCtx, ctx context.Context, reg *Registry, tenant string, key
 // event arrived.
 func streamOnce(runCtx, ctx context.Context, reg *Registry, tenant string, keys []string,
 	handle func(ctx context.Context, tenant string, ev *pluginv1.TrackerEvent) error, log *slog.Logger) (received bool, err error) {
-	c, cred, err := reg.trackerClient(ctx, tenant)
+	c, cred, id, err := reg.trackerClient(ctx, tenant)
 	if err != nil {
 		return false, err
 	}
 	stream, err := c.StreamEvents(ctx, &pluginv1.StreamEventsRequest{ProjectKeys: keys, Credential: cred})
 	if err != nil {
-		return false, err
+		return false, reg.rejected(ctx, tenant, []uuid.UUID{id}, err)
 	}
+	return receive(runCtx, ctx, reg, tenant, []uuid.UUID{id}, stream.Recv, handle, "tracker", log)
+}
+
+// receive hands each event of an open stream to handle until the stream ends.
+func receive[E interface{ GetExternalId() string }](runCtx, ctx context.Context, reg *Registry, tenant string,
+	ids []uuid.UUID, recv func() (E, error), handle func(ctx context.Context, tenant string, ev E) error,
+	kind string, log *slog.Logger) (received bool, err error) {
 	for {
-		ev, err := stream.Recv()
+		ev, err := recv()
 		if err == io.EOF {
 			return received, nil
 		}
 		if err != nil {
-			return received, err
+			return received, reg.rejected(ctx, tenant, ids, err)
 		}
 		received = true
 		if herr := handle(runCtx, tenant, ev); herr != nil {
-			log.Error("handle tracker event", "tenant", tenant, "external_id", ev.GetExternalId(), "error", herr)
+			log.Error("handle adapter event", "kind", kind, "tenant", tenant, "external_id", ev.GetExternalId(), "error", herr)
 		}
 	}
 }

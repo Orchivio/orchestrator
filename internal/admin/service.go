@@ -355,7 +355,8 @@ func (s *Service) validateProject(ctx context.Context, p Project) ([]config.Fiel
 
 func toConfigProject(p Project, profileName string) config.Project {
 	return config.Project{ID: p.ID, Name: p.Name, TrackerKey: p.TrackerKey, Profile: profileName, Repos: p.Repos,
-		Classifier: p.Classifier, Roles: p.Roles, MaxDiffLines: p.MaxDiffLines, Milestones: p.Milestones}
+		Classifier: p.Classifier, Roles: p.Roles, MaxDiffLines: p.MaxDiffLines, Milestones: p.Milestones,
+		StatusMap: p.StatusMap, ReviewTrigger: p.ReviewTrigger, CommentTrigger: p.CommentTrigger}
 }
 
 func (s *Service) CreateProject(ctx context.Context, p Project) (Project, error) {

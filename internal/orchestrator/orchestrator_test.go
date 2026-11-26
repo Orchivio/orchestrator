@@ -34,6 +34,7 @@ func testConfig() *config.Config {
 			},
 			MaxDiffLines: 300,
 			Milestones:   config.DefaultMilestones(),
+			StatusMap:    map[string]string{"running": "In Progress", "succeeded": "In Review"},
 		}},
 	}}}
 }
@@ -87,8 +88,20 @@ func (f *fakeStore) AppendEvent(_ context.Context, _ string, _ uuid.UUID, typ st
 	return nil
 }
 
+func (f *fakeStore) IssuedCredentialIDs(_ context.Context, _ uuid.UUID) ([]string, error) {
+	var ids []string
+	for _, e := range f.events {
+		if e.typ == eventCredentialsIssued {
+			ids = append(ids, e.payload.(map[string]string)["credential_id"])
+		}
+	}
+	return ids, nil
+}
+
 type fakeHost struct {
 	credCalls int
+	revoked   []string
+	unbounded int // RevokeRepoCredentials calls without deadline
 	prs       []*pluginv1.OpenPullRequestRequest
 	prErr     error
 	failRepo  string
@@ -96,7 +109,14 @@ type fakeHost struct {
 
 func (h *fakeHost) IssueRepoCredentials(context.Context, string, []string, bool) (*pluginv1.RepoCredentials, error) {
 	h.credCalls++
-	return &pluginv1.RepoCredentials{Token: "t"}, nil
+	return &pluginv1.RepoCredentials{Token: "t", CredentialId: "c1"}, nil
+}
+func (h *fakeHost) RevokeRepoCredentials(ctx context.Context, _, id string) error {
+	if _, ok := ctx.Deadline(); !ok {
+		h.unbounded++
+	}
+	h.revoked = append(h.revoked, id)
+	return nil
 }
 func (h *fakeHost) OpenPullRequest(_ context.Context, _ string, req *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error) {
 	if h.prErr != nil {
@@ -109,7 +129,19 @@ func (h *fakeHost) OpenPullRequest(_ context.Context, _ string, req *pluginv1.Op
 	return &pluginv1.PullRequest{Url: "https://gh/" + req.Repo + "/pull/1"}, nil
 }
 
-type fakeTracker struct{}
+type fakeTracker struct {
+	statuses *[]string
+	err      error
+}
+
+func (f fakeTracker) SetStatus(_ context.Context, _, _, status string) error {
+	if f.statuses != nil {
+		*f.statuses = append(*f.statuses, status)
+	}
+	return f.err
+}
+
+func (fakeTracker) AdapterName(context.Context, string) (string, error) { return "fake", nil }
 
 func (fakeTracker) GetTicket(context.Context, string, string) (*pluginv1.Ticket, error) {
 	return &pluginv1.Ticket{Title: "Fix it"}, nil
@@ -548,5 +580,94 @@ func TestCompleteAnsweredStoresNoAgentInput(t *testing.T) {
 	_ = f.complete("w1", workerv1.CompleteRunRequest_ANSWERED, "42", nil)
 	if len(f.s.inputs) != 0 {
 		t.Errorf("inputs = %+v", f.s.inputs)
+	}
+}
+
+func withTracker(f *fixture, tr fakeTracker) { f.o.tracker = tr }
+
+func TestStatusSetOnLeaseAndSuccess(t *testing.T) {
+	f := newFixture(t, "task")
+	var got []string
+	withTracker(f, fakeTracker{statuses: &got})
+	f.lease(t)
+	if err := f.complete("w1", workerv1.CompleteRunRequest_PUSHED, "done", map[string]string{"soemii/a": branch, "soemii/b": branch}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "In Progress,In Review"; strings.Join(got, ",") != want { // pushing is unmapped
+		t.Fatalf("statuses = %v, want %s", got, want)
+	}
+}
+
+func TestStatusNotSetForQuestionRuns(t *testing.T) {
+	f := newFixture(t, "question")
+	var got []string
+	withTracker(f, fakeTracker{statuses: &got})
+	f.lease(t)
+	if len(got) != 0 {
+		t.Fatalf("statuses = %v, want none", got)
+	}
+}
+
+func TestStatusFailureRecordedAndRunContinues(t *testing.T) {
+	f := newFixture(t, "task")
+	withTracker(f, fakeTracker{err: errors.New("jira 500")})
+	f.lease(t)
+	if f.state() != router.StateRunning {
+		t.Fatalf("state = %s", f.state())
+	}
+	last := f.s.events[len(f.s.events)-1]
+	if want := "status_failed"; last.typ != want {
+		t.Fatalf("last event = %v", last)
+	}
+	if p := last.payload.(map[string]string); p["state"] != "running" || p["status"] != "In Progress" || p["error"] != "jira 500" {
+		t.Fatalf("payload = %v", p)
+	}
+}
+
+func credentialsThenComplete(t *testing.T, outcome workerv1.CompleteRunRequest_Outcome) *fixture {
+	t.Helper()
+	f := newFixture(t, "question")
+	f.lease(t)
+	if _, err := f.o.Credentials(context.Background(), "w1", f.run.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.complete("w1", outcome, "x", nil); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestCredentialsRevokedAfterComplete(t *testing.T) {
+	succeeded := credentialsThenComplete(t, workerv1.CompleteRunRequest_ANSWERED)
+	failed := credentialsThenComplete(t, workerv1.CompleteRunRequest_FAILED)
+
+	if succeeded.state() != router.StateSucceeded || strings.Join(succeeded.host.revoked, ",") != "c1" {
+		t.Errorf("succeeded: state=%s revoked=%v, want c1", succeeded.state(), succeeded.host.revoked)
+	}
+	if failed.state() != router.StateFailed || strings.Join(failed.host.revoked, ",") != "c1" {
+		t.Errorf("failed: state=%s revoked=%v, want c1", failed.state(), failed.host.revoked)
+	}
+	if succeeded.host.unbounded+failed.host.unbounded != 0 {
+		t.Errorf("revoke calls without deadline: %d", succeeded.host.unbounded+failed.host.unbounded)
+	}
+}
+
+func TestCredentialsIssuedEventHoldsOnlyID(t *testing.T) {
+	f := newFixture(t, "question")
+	f.lease(t)
+	if _, err := f.o.Credentials(context.Background(), "w1", f.run.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	last := f.s.events[len(f.s.events)-1]
+	if got, ok := last.payload.(map[string]string); last.typ != eventCredentialsIssued || !ok ||
+		len(got) != 1 || got["credential_id"] != "c1" {
+		t.Fatalf("event = %+v", last)
+	}
+}
+
+func TestCredentialsNotRevokedWhileWaiting(t *testing.T) {
+	f := credentialsThenComplete(t, workerv1.CompleteRunRequest_WAITING)
+	if len(f.host.revoked) != 0 {
+		t.Fatalf("revoked = %v, want none while waiting", f.host.revoked)
 	}
 }

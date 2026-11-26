@@ -13,8 +13,8 @@ INSERT INTO conversations (id, tenant_id, project, ticket_ref, created_at)
 VALUES ($1, $2, $3, $4, $5);
 
 -- name: AddInput :exec
-INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, body, trigger, run_id, created_at, from_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+INSERT INTO inputs (id, tenant_id, conversation_id, actor_email, actor_ids, body, trigger, run_id, created_at, from_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: OpenInputs :many
 SELECT * FROM inputs WHERE conversation_id = $1 AND run_id IS NULL
@@ -40,6 +40,11 @@ ORDER BY created_at DESC, id LIMIT 1;
 -- name: LastRun :one
 SELECT * FROM runs WHERE conversation_id = $1 ORDER BY created_at DESC, id LIMIT 1;
 
+-- name: FindTaskRunByBranch :one
+SELECT * FROM runs
+WHERE tenant_id = $1 AND branch = $2 AND kind = 'task' AND repos @> jsonb_build_array(sqlc.arg(repo)::text)
+ORDER BY created_at DESC, id LIMIT 1;
+
 -- name: GetRun :one
 SELECT * FROM runs WHERE id = $1;
 
@@ -63,6 +68,10 @@ RETURNING *;
 
 -- name: AppendEvent :exec
 INSERT INTO events (tenant_id, run_id, type, payload, at) VALUES ($1, $2, $3, $4, $5);
+
+-- name: IssuedCredentialIDs :many
+SELECT (payload->>'credential_id')::text AS credential_id FROM events
+WHERE run_id = $1 AND type = 'credentials_issued' ORDER BY id;
 
 -- name: ListEvents :many
 SELECT * FROM events WHERE run_id = $1 ORDER BY id;

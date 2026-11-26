@@ -56,9 +56,10 @@ func (s *Service) loadCredentials(ctx context.Context, tenants []Tenant, cfg *co
 		}
 		ct := cfg.Tenants[c.TenantSlug]
 		if c.Kind == KindTracker {
-			ct.TrackerCredential = plain
+			ct.TrackerCredential, ct.TrackerConnectionID = plain, c.ID
 		} else {
 			ct.CodeHostCredentials = append(ct.CodeHostCredentials, plain)
+			ct.CodeHostConnectionIDs = append(ct.CodeHostConnectionIDs, c.ID)
 		}
 		cfg.Tenants[c.TenantSlug] = ct
 	}

@@ -123,7 +123,7 @@ func (s *Store) CreateConversation(ctx context.Context, c router.Conversation) e
 
 func (s *Store) AddInput(ctx context.Context, in router.Input) error {
 	return s.q.AddInput(ctx, db.AddInputParams{
-		ID: in.ID, TenantID: in.Tenant, ConversationID: in.ConversationID, ActorEmail: in.ActorEmail,
+		ID: in.ID, TenantID: in.Tenant, ConversationID: in.ConversationID, ActorEmail: in.ActorEmail, ActorIds: nonNilStrings(in.Actors),
 		Body: in.Body, Trigger: string(in.Trigger), RunID: in.RunID, CreatedAt: in.CreatedAt, FromAgent: in.FromAgent})
 }
 
@@ -143,6 +143,11 @@ func (s *Store) ActiveRun(ctx context.Context, conversationID uuid.UUID) (*route
 
 func (s *Store) LastRun(ctx context.Context, conversationID uuid.UUID) (*router.Run, error) {
 	row, err := s.q.LastRun(ctx, conversationID)
+	return runOrNil(row, err)
+}
+
+func (s *Store) FindTaskRunByBranch(ctx context.Context, tenant, repo, branch string) (*router.Run, error) {
+	row, err := s.q.FindTaskRunByBranch(ctx, db.FindTaskRunByBranchParams{TenantID: tenant, Branch: branch, Repo: repo})
 	return runOrNil(row, err)
 }
 
@@ -231,6 +236,11 @@ func (s *Store) AppendEvent(ctx context.Context, tenant string, runID uuid.UUID,
 	return s.q.AppendEvent(ctx, db.AppendEventParams{TenantID: tenant, RunID: runID, Type: typ, Payload: raw, At: s.now()})
 }
 
+// IssuedCredentialIDs lists the repo credential ids recorded for the run, oldest first.
+func (s *Store) IssuedCredentialIDs(ctx context.Context, runID uuid.UUID) ([]string, error) {
+	return s.q.IssuedCredentialIDs(ctx, runID)
+}
+
 func (s *Store) ListEvents(ctx context.Context, runID uuid.UUID) ([]admin.RunEvent, error) {
 	rows, err := s.q.ListEvents(ctx, runID)
 	return mapRows(rows, err, func(e db.Event) admin.RunEvent {
@@ -274,8 +284,16 @@ func toConversation(c db.Conversation) router.Conversation {
 	return router.Conversation{ID: c.ID, Tenant: c.TenantID, Project: c.Project, TicketRef: c.TicketRef, CreatedAt: c.CreatedAt.UTC()}
 }
 
+// nonNilStrings keeps a nil slice from becoming SQL NULL (the column is NOT NULL).
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 func toInput(i db.Input) router.Input {
-	return router.Input{ID: i.ID, Tenant: i.TenantID, ConversationID: i.ConversationID, ActorEmail: i.ActorEmail,
+	return router.Input{ID: i.ID, Tenant: i.TenantID, ConversationID: i.ConversationID, ActorEmail: i.ActorEmail, Actors: i.ActorIds,
 		Body: i.Body, Trigger: classifier.Trigger(i.Trigger), RunID: i.RunID, CreatedAt: i.CreatedAt.UTC(), FromAgent: i.FromAgent}
 }
 

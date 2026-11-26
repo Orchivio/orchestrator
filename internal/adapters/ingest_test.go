@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -442,5 +443,74 @@ func TestIngestStopsStreamWhenTrackerCredentialGone(t *testing.T) {
 	reload(t, src, cfg, withCredential(tenantWith("RES", "ORC"), "")) // key change alone starts nothing
 	if n := len(tr.snapshot()); n != 1 {
 		t.Fatalf("streams = %d, want 1", n)
+	}
+}
+
+type namedCodeHost struct {
+	pluginv1.UnimplementedCodeHostAdapterServer
+	capsCalls *atomic.Int32
+}
+
+func (n namedCodeHost) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
+	n.capsCalls.Add(1)
+	return &pluginv1.Capabilities{ContractVersion: "plugin.v1", AdapterName: "fake-host"}, nil
+}
+
+func TestRegistryAdapterNameOfCodeHostIsCachedWithConnection(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	var capsCalls atomic.Int32
+	pluginv1.RegisterCodeHostAdapterServer(srv, namedCodeHost{capsCalls: &capsCalls})
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	reg := NewRegistry(cfg, log)
+	reg.dialer = func(string) (*grpc.ClientConn, error) {
+		return grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	t.Cleanup(reg.Close)
+
+	for range 3 {
+		got, err := reg.AdapterName(context.Background(), "acme", "codehost")
+		if err != nil || got != "fake-host" {
+			t.Fatalf("AdapterName = %q, %v", got, err)
+		}
+	}
+	if n := capsCalls.Load(); n != 1 {
+		t.Fatalf("GetCapabilities called %d times, want 1", n)
+	}
+}
+
+func TestRegistryAdapterNameIsCachedWithConnection(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg, err := config.NewSync(context.Background(), config.Static{Config: testConfig()}, time.Hour, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	pluginv1.RegisterTrackerAdapterServer(srv, &fakeTracker{})
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	reg := NewRegistry(cfg, log)
+	reg.dialer = func(string) (*grpc.ClientConn, error) {
+		return grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	t.Cleanup(reg.Close)
+
+	got, err := reg.AdapterName(context.Background(), "acme", "tracker")
+	if err != nil || got != "fake" {
+		t.Fatalf("AdapterName = %q, %v", got, err)
+	}
+	if _, err := reg.AdapterName(context.Background(), "nope", "tracker"); err == nil {
+		t.Fatal("unknown tenant must fail")
 	}
 }

@@ -41,15 +41,16 @@ var (
 )
 
 const (
-	leaseGrace          = 5 * time.Minute
-	eventRunState       = "run.state"
-	kindTask            = "task"
-	milestoneQuestion   = config.MilestoneQuestion
-	milestoneResult     = config.MilestoneResult
-	abortedPrefix       = "Abgebrochen: "
-	donePrefix          = "Fertig. Pull Request: "
-	textNoAnswer        = "Der Agent hat keine Antwort geliefert."
-	redactedFallbackFmt = `{"type":%q,"redacted":true}`
+	leaseGrace             = 5 * time.Minute
+	eventRunState          = "run.state"
+	eventCredentialsIssued = "credentials_issued"
+	kindTask               = "task"
+	milestoneQuestion      = config.MilestoneQuestion
+	milestoneResult        = config.MilestoneResult
+	abortedPrefix          = "Abgebrochen: "
+	donePrefix             = "Fertig. Pull Request: "
+	textNoAnswer           = "Der Agent hat keine Antwort geliefert."
+	redactedFallbackFmt    = `{"type":%q,"redacted":true}`
 )
 
 var eventTypes = []string{"run.started", "tool.called", "tool.finished", "file.changed", "message",
@@ -180,7 +181,40 @@ func (o *Orchestrator) Credentials(ctx context.Context, workerID string, runID u
 	if write && run.Kind != kindTask {
 		return nil, ErrWriteNotAllowed
 	}
-	return o.codeHost.IssueRepoCredentials(ctx, run.Tenant, run.Repos, write)
+	rc, err := o.codeHost.IssueRepoCredentials(ctx, run.Tenant, run.Repos, write)
+	if err != nil || rc.GetCredentialId() == "" {
+		return rc, err
+	}
+	// ponytail: the id lives in the run's events, no column of its own
+	payload := map[string]string{"credential_id": rc.GetCredentialId()}
+	if err := o.store.AppendEvent(ctx, run.Tenant, run.ID, eventCredentialsIssued, payload); err != nil {
+		// Unrecorded credentials could never be revoked: withdraw them now.
+		o.revoke(ctx, run, rc.GetCredentialId())
+		return nil, fmt.Errorf("record credentials of run %s: %w", run.ID, err)
+	}
+	return rc, nil
+}
+
+// revokeIssued withdraws every repo credential issued to the finished run;
+// best effort, the credentials expire on their own.
+func (o *Orchestrator) revokeIssued(ctx context.Context, run *router.Run) {
+	ids, err := o.store.IssuedCredentialIDs(ctx, run.ID)
+	if err != nil {
+		slog.Warn("issued credentials of run unknown, not revoked", "run", run.ID, "error", err)
+		return
+	}
+	o.revoke(ctx, run, ids...)
+}
+
+func (o *Orchestrator) revoke(ctx context.Context, run *router.Run, ids ...string) {
+	for _, id := range ids {
+		callCtx, cancel := context.WithTimeout(ctx, router.AdapterCallTimeout)
+		err := o.codeHost.RevokeRepoCredentials(callCtx, run.Tenant, id)
+		cancel()
+		if err != nil {
+			slog.Warn("revoke repo credentials failed", "run", run.ID, "error", err)
+		}
+	}
 }
 
 // owned loads the run and checks the worker holds its lease.
@@ -237,6 +271,8 @@ func (o *Orchestrator) Complete(ctx context.Context, req *workerv1.CompleteRunRe
 		return err
 	}
 	if run.State != router.StateWaitingForInput {
+		// ponytail: a waiting run keeps its credentials until it finishes or they expire
+		o.revokeIssued(ctx, run)
 		if err := o.followUp(ctx, run.ConversationID); err != nil {
 			slog.Error("follow-up after run failed", "run", run.ID, "error", err)
 		}
@@ -334,4 +370,5 @@ func (o *Orchestrator) recordState(ctx context.Context, run *router.Run) {
 	if err := o.store.AppendEvent(ctx, run.Tenant, run.ID, eventRunState, map[string]string{"state": run.State}); err != nil {
 		slog.Error("record state event failed", "run", run.ID, "error", err)
 	}
+	router.ApplyStatus(ctx, o.cfg, o.tracker, o.store, *run, run.State)
 }

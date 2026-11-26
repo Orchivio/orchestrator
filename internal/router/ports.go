@@ -41,12 +41,29 @@ type Input struct {
 	ID             uuid.UUID
 	Tenant         string
 	ConversationID uuid.UUID
-	ActorEmail     string
-	Body           string
-	Trigger        classifier.Trigger
-	RunID          *uuid.UUID
-	CreatedAt      time.Time
-	FromAgent      bool
+	// ActorEmail holds the identity of the actor that matched a role: an e-mail
+	// address or "<system>:<id>". The column keeps its historic name.
+	ActorEmail string
+	// Actors are all identities of the actor; empty on rows from before they
+	// were stored, see Identities.
+	Actors    []string
+	Body      string
+	Trigger   classifier.Trigger
+	RunID     *uuid.UUID
+	CreatedAt time.Time
+	FromAgent bool
+}
+
+// Identities returns all identities of the input's actor, falling back to
+// ActorEmail for rows that stored none.
+func (in Input) Identities() []string {
+	if len(in.Actors) > 0 {
+		return in.Actors
+	}
+	if in.ActorEmail == "" {
+		return nil
+	}
+	return []string{in.ActorEmail}
 }
 
 // Run is one agent execution. Project holds the tracker key of the project.
@@ -89,6 +106,9 @@ type Store interface {
 	OpenInputs(ctx context.Context, conversationID uuid.UUID) ([]Input, error) // inputs without run, oldest first
 	ActiveRun(ctx context.Context, conversationID uuid.UUID) (*Run, error)     // classifying|queued|running|pushing|waiting_for_input
 	LastRun(ctx context.Context, conversationID uuid.UUID) (*Run, error)
+	// FindTaskRunByBranch returns the newest task run of the tenant on branch
+	// whose repos contain repo; nil, nil if none.
+	FindTaskRunByBranch(ctx context.Context, tenant, repo, branch string) (*Run, error)
 	CreateRun(ctx context.Context, r Run) error
 	UpdateRun(ctx context.Context, r Run) error
 	ClaimInputs(ctx context.Context, conversationID, runID uuid.UUID) error
@@ -98,7 +118,20 @@ type Store interface {
 
 // Tracker reads tickets from the tenant's tracker adapter.
 type Tracker interface {
+	// AdapterName is the adapter_name the tracker adapter reports; it names the
+	// system in "<system>:<id>" role entries.
+	AdapterName(ctx context.Context, tenant string) (string, error)
 	GetTicket(ctx context.Context, tenant, ref string) (*pluginv1.Ticket, error)
+	// SetStatus moves the ticket to the named status; a no-op (nil) when the
+	// adapter does not support status updates.
+	SetStatus(ctx context.Context, tenant, ref, status string) error
+}
+
+// CodeHost names the tenant's code host adapter.
+type CodeHost interface {
+	// AdapterName is the adapter_name the code host adapter reports; it names
+	// the system in "<system>:<id>" role entries and the inbound dedup source.
+	AdapterName(ctx context.Context, tenant string) (string, error)
 }
 
 // Reporter writes milestones and notices back to the ticket.

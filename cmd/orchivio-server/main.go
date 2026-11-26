@@ -93,13 +93,19 @@ func run(parent context.Context, log *slog.Logger) error {
 	log.Info("config loaded", "tenants", len(cfg.Current().Tenants))
 	reg := adapters.NewRegistry(cfg, log)
 	defer reg.Close()
+	// A rejected token takes effect now: marking reloads the config, which drops the connection's stream.
+	reg.OnRejected(func(ctx context.Context, tenant string, id uuid.UUID) {
+		if err := svc.MarkNeedsReauth(ctx, tenant, id); err != nil {
+			log.Error("mark connection needs_reauth", "tenant", tenant, "connection", id, "error", err)
+		}
+	})
 
 	var background sync.WaitGroup
 	defer background.Wait() // runs before reg.Close and db.Close
 	defer cancel()
 
 	rep := reporter.New(func(t string) reporter.TrackerClient { return reg.TrackerFor(t) }, cfg)
-	rt := router.New(cfg, db, reg.Tracker(), rep, time.Now, uuid.New)
+	rt := router.New(cfg, db, reg.Tracker(), reg.CodeHost(), rep, time.Now, uuid.New)
 	orch := orchestrator.New(cfg, db, reg.CodeHost(), reg.Tracker(), rep, rt.StartFollowUp, time.Now, defaultLease)
 
 	lis, err := net.Listen("tcp", grpcAddr)
@@ -111,9 +117,10 @@ func run(parent context.Context, log *slog.Logger) error {
 	hs := &http.Server{Addr: httpAddr, Handler: newMux(svc, log), ReadHeaderTimeout: 10 * time.Second}
 
 	errc := make(chan error, 2)
-	background.Add(3)
+	background.Add(4)
 	go func() { defer background.Done(); cfg.Run(ctx) }()
 	go func() { defer background.Done(); adapters.Run(ctx, cfg, reg, rt.Handle, log) }()
+	go func() { defer background.Done(); adapters.RunCodeHost(ctx, cfg, reg, rt.HandleReview, log) }()
 	go func() { defer background.Done(); refreshConnections(ctx, svc, log) }()
 	go func() { errc <- gs.Serve(lis) }()
 	go func() { errc <- hs.ListenAndServe() }()

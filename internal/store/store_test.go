@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -367,5 +368,71 @@ func TestHistoryKeepsAgentQuestionBeforeAnswer(t *testing.T) {
 	}
 	if !reflect.DeepEqual(hist, want) {
 		t.Fatalf("History = %+v\nwant %+v", hist, want)
+	}
+}
+
+func TestInputActorIdentitiesRoundTrip(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	c := newConversation(t, s)
+	add := func(actors []string) {
+		in := router.Input{ID: uuid.New(), Tenant: c.Tenant, ConversationID: c.ID, ActorEmail: "a@b.de", Actors: actors,
+			Trigger: "assigned", CreatedAt: base}
+		if err := s.AddInput(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add([]string{"a@b.de", "acme:jdoe"})
+	add(nil)
+	got, err := s.OpenInputs(ctx, c.ID)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("OpenInputs = %v, %v", got, err)
+	}
+	ids := map[int][]string{0: got[0].Identities(), 1: got[1].Identities()}
+	withIDs, without := 0, 1
+	if len(got[0].Actors) == 0 {
+		withIDs, without = 1, 0
+	}
+	if !slices.Equal(ids[withIDs], []string{"a@b.de", "acme:jdoe"}) || len(got[without].Actors) != 0 || !slices.Equal(ids[without], []string{"a@b.de"}) {
+		t.Fatalf("identities = %v", ids)
+	}
+}
+
+func TestFindTaskRunByBranch(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	c := newConversation(t, s)
+	other := newConversation(t, s) // another tenant with the same branch and repo
+	mk := func(c router.Conversation, kind, branch string, repos []string, created time.Time) router.Run {
+		r := router.Run{ID: uuid.New(), Tenant: c.Tenant, ConversationID: c.ID, Project: c.Project, TicketRef: c.TicketRef,
+			Kind: kind, State: router.StateSucceeded, Repos: repos, Branch: branch, CreatedAt: created, UpdatedAt: created}
+		if err := s.CreateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	mk(c, "task", "orchivio/x", []string{"g/a", "g/b"}, base)
+	newest := mk(c, "task", "orchivio/x", []string{"g/b"}, base.Add(time.Minute))
+	mk(c, "question", "orchivio/x", []string{"g/b"}, base.Add(2*time.Minute))
+	mk(other, "task", "orchivio/x", []string{"g/b"}, base.Add(3*time.Minute))
+
+	got, err := s.FindTaskRunByBranch(ctx, c.Tenant, "g/b", "orchivio/x")
+	if err != nil || got == nil || got.ID != newest.ID {
+		t.Fatalf("FindTaskRunByBranch = %+v, %v; want %s", got, err, newest.ID)
+	}
+	if got, err := s.FindTaskRunByBranch(ctx, c.Tenant, "g/c", "orchivio/x"); err != nil || got != nil {
+		t.Fatalf("unknown repo = %+v, %v; want nil", got, err)
+	}
+}
+
+func TestIssuedCredentialIDs(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	r := newRun(t, s, newConversation(t, s), router.StateSucceeded, base)
+	for _, id := range []string{"c1", "c2"} {
+		if err := s.AppendEvent(ctx, r.Tenant, r.ID, "credentials_issued", map[string]string{"credential_id": id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.IssuedCredentialIDs(ctx, r.ID)
+	if err != nil || !slices.Equal(got, []string{"c1", "c2"}) {
+		t.Fatalf("IssuedCredentialIDs = %v, %v", got, err)
 	}
 }

@@ -19,10 +19,13 @@ type Store interface {
 	UpdateRun(ctx context.Context, r router.Run) error
 	AppendEvent(ctx context.Context, tenant string, runID uuid.UUID, typ string, payload any) error
 	AddInput(ctx context.Context, in router.Input) error // agent questions (FromAgent) for the history
+	// IssuedCredentialIDs lists the credential ids of the run's credentials_issued events.
+	IssuedCredentialIDs(ctx context.Context, runID uuid.UUID) ([]string, error)
 }
 
 // CodeHost is the tenant's code host adapter.
 type CodeHost interface {
 	IssueRepoCredentials(ctx context.Context, tenant string, repos []string, write bool) (*pluginv1.RepoCredentials, error)
 	OpenPullRequest(ctx context.Context, tenant string, req *pluginv1.OpenPullRequestRequest) (*pluginv1.PullRequest, error)
+	RevokeRepoCredentials(ctx context.Context, tenant, credentialID string) error
 }
