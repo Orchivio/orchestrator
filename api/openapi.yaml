@@ -476,6 +476,11 @@ components:
           propertyNames: {enum: [running, waiting_for_input, pushing, succeeded, failed, cancelled]}
           additionalProperties: {type: string, minLength: 1}
         reviewTrigger: {type: string, enum: [mention, any], default: mention}
+        commentTrigger:
+          type: string
+          enum: [mention, any]
+          default: any
+          description: Which tracker comments count in a ticket with a conversation. `any` takes every comment as an answer or follow-up; `mention` ignores comments without a bot mention, also while a run waits for input. Without a conversation a comment always needs a mention
         version: {type: integer, format: int64, readOnly: true}
         createdAt: {type: string, format: date-time, readOnly: true}
         updatedAt: {type: string, format: date-time, readOnly: true}

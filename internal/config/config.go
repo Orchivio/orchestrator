@@ -63,6 +63,8 @@ type Project struct {
 	StatusMap map[string]string
 	// ReviewTrigger is ReviewTriggerMention or ReviewTriggerAny; "" means mention.
 	ReviewTrigger string
+	// CommentTrigger is CommentTriggerMention or CommentTriggerAny; "" means any.
+	CommentTrigger string
 }
 
 // Values of Project.ReviewTrigger: which merge request comments start a run.
@@ -70,6 +72,21 @@ const (
 	ReviewTriggerMention = "mention"
 	ReviewTriggerAny     = "any"
 )
+
+// Values of Project.CommentTrigger: which tracker comments count in a ticket
+// with a conversation. Same values as the review trigger.
+const (
+	CommentTriggerMention = ReviewTriggerMention
+	CommentTriggerAny     = ReviewTriggerAny
+)
+
+// EffectiveCommentTrigger returns CommentTrigger with the default applied.
+func (p Project) EffectiveCommentTrigger() string {
+	if p.CommentTrigger == "" {
+		return CommentTriggerAny
+	}
+	return p.CommentTrigger
+}
 
 // EffectiveReviewTrigger returns ReviewTrigger with the default applied.
 func (p Project) EffectiveReviewTrigger() string {

@@ -69,6 +69,9 @@ func ValidateProject(t Tenant, p Project) []FieldError {
 	if rt := p.EffectiveReviewTrigger(); rt != ReviewTriggerMention && rt != ReviewTriggerAny {
 		add("reviewTrigger", "must be %q or %q", ReviewTriggerMention, ReviewTriggerAny)
 	}
+	if ct := p.EffectiveCommentTrigger(); ct != CommentTriggerMention && ct != CommentTriggerAny {
+		add("commentTrigger", "must be %q or %q", CommentTriggerMention, CommentTriggerAny)
+	}
 	for _, list := range []struct {
 		field   string
 		entries []string

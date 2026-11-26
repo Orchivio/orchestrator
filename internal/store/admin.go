@@ -22,13 +22,14 @@ const pgUniqueViolation = "23505"
 
 // projectSpec is the jsonb document of projects.spec.
 type projectSpec struct {
-	Repos         []config.Repo          `json:"repos"`
-	Classifier    config.ClassifierRules `json:"classifier"`
-	Roles         config.Roles           `json:"roles"`
-	MaxDiffLines  int                    `json:"maxDiffLines"`
-	Milestones    []string               `json:"milestones"`
-	StatusMap     map[string]string      `json:"statusMap,omitempty"`
-	ReviewTrigger string                 `json:"reviewTrigger,omitempty"`
+	Repos          []config.Repo          `json:"repos"`
+	Classifier     config.ClassifierRules `json:"classifier"`
+	Roles          config.Roles           `json:"roles"`
+	MaxDiffLines   int                    `json:"maxDiffLines"`
+	Milestones     []string               `json:"milestones"`
+	StatusMap      map[string]string      `json:"statusMap,omitempty"`
+	ReviewTrigger  string                 `json:"reviewTrigger,omitempty"`
+	CommentTrigger string                 `json:"commentTrigger,omitempty"`
 }
 
 // mapWriteErr turns a unique violation into admin.ErrTaken.
@@ -251,7 +252,7 @@ func (s *Store) DeleteProject(ctx context.Context, tenant string, id uuid.UUID, 
 
 func marshalSpec(p admin.Project) ([]byte, error) {
 	return json.Marshal(projectSpec{Repos: p.Repos, Classifier: p.Classifier, Roles: p.Roles,
-		MaxDiffLines: p.MaxDiffLines, Milestones: p.Milestones, StatusMap: p.StatusMap, ReviewTrigger: p.ReviewTrigger})
+		MaxDiffLines: p.MaxDiffLines, Milestones: p.Milestones, StatusMap: p.StatusMap, ReviewTrigger: p.ReviewTrigger, CommentTrigger: p.CommentTrigger})
 }
 
 func toTenant(t db.Tenant) admin.Tenant {
@@ -272,7 +273,7 @@ func toProject(p db.Project) (admin.Project, error) {
 	}
 	return admin.Project{ID: p.ID, TenantSlug: p.TenantSlug, Name: p.Name, TrackerKey: p.TrackerKey,
 		ProfileID: p.ProfileID, Repos: spec.Repos, Classifier: spec.Classifier, Roles: spec.Roles,
-		MaxDiffLines: spec.MaxDiffLines, Milestones: spec.Milestones, StatusMap: spec.StatusMap, ReviewTrigger: spec.ReviewTrigger,
+		MaxDiffLines: spec.MaxDiffLines, Milestones: spec.Milestones, StatusMap: spec.StatusMap, ReviewTrigger: spec.ReviewTrigger, CommentTrigger: spec.CommentTrigger,
 		Version: p.Version, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC()}, nil
 }
 

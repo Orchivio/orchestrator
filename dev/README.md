@@ -72,6 +72,8 @@ Orchivio läuft in Linear als **App-User** einer OAuth-App: eigener Nutzer, erw�
 - `ORCHIVIO_SEED_EMAIL`: deine Linear-E-Mail-Adresse für `roles.questions` und `roles.tasks`. Wer nicht gelistet ist, bekommt bei Erwähnung oder Zuweisung den Hinweis „Rolle fehlt“ und löst keinen Run aus; einfache Kommentare ohne Erwähnung werden ignoriert.
 - `ORCHIVIO_SEED_MODEL`: Modell des Profils; ein Alias wie `sonnet` funktioniert mit Claude Code.
 
+Optional steuert `commentTrigger` im Projekt (`any`, Standard, oder `mention`), ob in einem Ticket mit Konversation jeder Kommentar als Antwort oder Folgefrage zählt oder nur ein Kommentar mit Erwähnung des Bots.
+
 Rolleneinträge in `roles.questions`/`roles.tasks` sind E-Mail-Adressen, `<system>:<username>` oder `<system>:id:<id>` (`<system>` ist der `adapter_name`, z. B. `jira`, `gitlab`, `github`; Beispiel `gitlab:id:12345`). Empfohlen ist `<system>:id:<id>` (Jira-`accountId` bzw. DC-Benutzerschlüssel, numerische GitLab-User-ID): IDs ändern sich nie, Benutzernamen und E-Mail-Adressen schon. IDs haben einen eigenen Namensraum, damit eine ID nie den gleichlautenden Benutzernamen eines anderen trifft; Benutzernamen, die mit `id:` beginnen, gelten nicht.
 
 ### Verbinden

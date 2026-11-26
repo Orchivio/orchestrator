@@ -294,3 +294,27 @@ func TestMinimalProjectReturnsEmptyStatusMap(t *testing.T) {
 		}
 	}
 }
+
+func TestUnknownCommentTriggerIs422(t *testing.T) {
+	e := newEnv(t)
+	pid := e.seedTenantAndProfile()
+	body := strings.Replace(projectBody(pid, "o/x"), "{", `{"commentTrigger":"always",`, 1)
+	rec := e.do("POST", "/api/v1/tenants/acme/projects", body)
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), `"commentTrigger"`) {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestCommentTriggerRoundTripAndDefault(t *testing.T) {
+	e := newEnv(t)
+	pid := e.seedTenantAndProfile()
+	rec := e.do("POST", "/api/v1/tenants/acme/projects", projectBody(pid, "o/x"))
+	if got := e.do("GET", rec.Header().Get("Location"), "").Body.String(); !strings.Contains(got, `"commentTrigger":"any"`) {
+		t.Fatalf("default missing in %s", got)
+	}
+	body := strings.Replace(projectBody(pid, "o/x"), "{", `{"commentTrigger":"mention",`, 1)
+	rec = e.do("POST", "/api/v1/tenants/acme/projects", strings.Replace(body, `"ACME"`, `"ACM2"`, 1))
+	if got := e.do("GET", rec.Header().Get("Location"), "").Body.String(); !strings.Contains(got, `"commentTrigger":"mention"`) {
+		t.Fatalf("mention missing in %s", got)
+	}
+}

@@ -743,3 +743,51 @@ func TestStatusFailureDoesNotFailRun(t *testing.T) {
 		t.Fatalf("last event = %q, want %q", last, want)
 	}
 }
+
+func withCommentTrigger(trigger string) func(*config.Project) {
+	return func(p *config.Project) { p.CommentTrigger = trigger }
+}
+
+// finishedConversation is a ticket with a conversation whose run succeeded.
+func finishedConversation(t *testing.T, trigger string) *fixture {
+	t.Helper()
+	f := newFixtureWith(t, "soemii/playground", withCommentTrigger(trigger))
+	handle(t, f, assigned("e1", actor))
+	f.s.runs[0].State = StateSucceeded
+	return f
+}
+
+func TestCommentTriggerMentionIgnoresPlainComment(t *testing.T) {
+	f := finishedConversation(t, config.CommentTriggerMention)
+	handle(t, f, comment("e2", "noch was", false))
+	open, _ := f.s.OpenInputs(context.Background(), f.s.convs[0].ID)
+	if len(f.s.runs) != 1 || len(open) != 0 {
+		t.Fatalf("runs = %d, open inputs = %v", len(f.s.runs), open)
+	}
+}
+
+func TestCommentTriggerMentionAcceptsMention(t *testing.T) {
+	f := finishedConversation(t, config.CommentTriggerMention)
+	handle(t, f, comment("e2", "@bot noch was", true))
+	if len(f.s.runs) != 2 || f.s.runs[1].State != StateQueued {
+		t.Fatalf("runs = %v", f.s.runs)
+	}
+}
+
+func TestCommentTriggerAnyKeepsPlainFollowUp(t *testing.T) {
+	f := finishedConversation(t, "")
+	handle(t, f, comment("e2", "noch was", false))
+	if len(f.s.runs) != 2 || f.s.runs[1].State != StateQueued {
+		t.Fatalf("runs = %v", f.s.runs)
+	}
+}
+
+func TestCommentTriggerMentionIgnoresAnswerWhileWaiting(t *testing.T) {
+	f := newFixtureWith(t, "", withCommentTrigger(config.CommentTriggerMention))
+	handle(t, f, assigned("e1", actor))
+	f.tr.labels = []string{"repo:playground"}
+	handle(t, f, comment("e2", "Das Playground-Repo", false))
+	if len(f.s.runs) != 1 || f.s.runs[0].State != StateWaitingForInput {
+		t.Fatalf("runs = %v", f.s.runs)
+	}
+}

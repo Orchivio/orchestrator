@@ -86,3 +86,18 @@ func TestRoleEntryForms(t *testing.T) {
 		}
 	}
 }
+
+func TestCommentTriggerValues(t *testing.T) {
+	tn, p := validProject()
+	p.CommentTrigger = CommentTriggerMention
+	if errs := ValidateProject(tn, p); len(errs) != 0 {
+		t.Fatalf("errs = %v", errs)
+	}
+	p.CommentTrigger = "always"
+	if got := fieldsOf(ValidateProject(tn, p)); len(got) != 1 || got[0] != "commentTrigger" {
+		t.Fatalf("fields = %v", got)
+	}
+	if got := (Project{}).EffectiveCommentTrigger(); got != CommentTriggerAny {
+		t.Fatalf("default = %q", got)
+	}
+}

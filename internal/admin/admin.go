@@ -41,6 +41,7 @@ type Project struct {
 	Milestones                   []string
 	StatusMap                    map[string]string
 	ReviewTrigger                string
+	CommentTrigger               string
 	Version                      int64
 	CreatedAt, UpdatedAt         time.Time
 }

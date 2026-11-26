@@ -68,7 +68,7 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 	if err != nil {
 		return fmt.Errorf("find conversation %s: %w", ev.GetTicketRef(), err)
 	}
-	trigger, relevant := triggerFor(ev, conv != nil)
+	trigger, relevant := triggerFor(ev, conv != nil, project.EffectiveCommentTrigger() == config.CommentTriggerMention)
 	if !relevant {
 		return nil
 	}
@@ -100,13 +100,13 @@ func (r *Router) Handle(ctx context.Context, tenant string, ev *pluginv1.Tracker
 	return r.start(ctx, tn, project, conv, trigger, actors)
 }
 
-func triggerFor(ev *pluginv1.TrackerEvent, hasConversation bool) (classifier.Trigger, bool) {
+func triggerFor(ev *pluginv1.TrackerEvent, hasConversation, mentionOnly bool) (classifier.Trigger, bool) {
 	switch {
 	case ev.GetKind() == pluginv1.TrackerEvent_ASSIGNED:
 		return classifier.TriggerAssigned, true
 	case ev.GetKind() == pluginv1.TrackerEvent_COMMENTED && ev.GetMentionsBot():
 		return classifier.TriggerMentioned, true
-	case ev.GetKind() == pluginv1.TrackerEvent_COMMENTED && hasConversation:
+	case ev.GetKind() == pluginv1.TrackerEvent_COMMENTED && hasConversation && !mentionOnly:
 		return classifier.TriggerFollowup, true
 	}
 	return "", false
