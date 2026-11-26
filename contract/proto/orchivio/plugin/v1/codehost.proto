@@ -32,7 +32,7 @@ message RepoCredentials {
   google.protobuf.Timestamp expires_at = 3;
   map<string, string> clone_urls = 4; // repo -> https URL without credentials
   map<string, RepoToken> tokens = 5; // repo -> token; empty = single token above applies
-  string credential_id = 6; // what the adapter needs to revoke
+  string credential_id = 6; // opaque id the adapter needs to revoke; never contains a secret (stored in run events)
 }
 
 message RepoToken {

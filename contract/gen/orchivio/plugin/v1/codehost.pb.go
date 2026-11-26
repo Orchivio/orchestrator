@@ -135,7 +135,7 @@ type RepoCredentials struct {
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	CloneUrls     map[string]string      `protobuf:"bytes,4,rep,name=clone_urls,json=cloneUrls,proto3" json:"clone_urls,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // repo -> https URL without credentials
 	Tokens        map[string]*RepoToken  `protobuf:"bytes,5,rep,name=tokens,proto3" json:"tokens,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`                        // repo -> token; empty = single token above applies
-	CredentialId  string                 `protobuf:"bytes,6,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`                                                                  // what the adapter needs to revoke
+	CredentialId  string                 `protobuf:"bytes,6,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`                                                                  // opaque id the adapter needs to revoke; never contains a secret (stored in run events)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

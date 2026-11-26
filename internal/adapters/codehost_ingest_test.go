@@ -7,6 +7,7 @@ import (
 	"net"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,12 +23,15 @@ import (
 // blocks until the stream's ctx ends.
 type recordingCodeHost struct {
 	pluginv1.UnimplementedCodeHostAdapterServer
-	mu    sync.Mutex
-	calls []*streamCall
+	mu        sync.Mutex
+	calls     []*streamCall
+	noReviews bool
+	capsCalls atomic.Int32
 }
 
 func (f *recordingCodeHost) GetCapabilities(context.Context, *pluginv1.GetCapabilitiesRequest) (*pluginv1.Capabilities, error) {
-	return &pluginv1.Capabilities{ContractVersion: "plugin.v1", AdapterName: "fake-host", SupportsReviewEvents: true}, nil
+	f.capsCalls.Add(1)
+	return &pluginv1.Capabilities{ContractVersion: "plugin.v1", AdapterName: "fake-host", SupportsReviewEvents: !f.noReviews}, nil
 }
 
 func (f *recordingCodeHost) StreamEvents(req *pluginv1.StreamCodeHostEventsRequest, s pluginv1.CodeHostAdapter_StreamEventsServer) error {
@@ -62,14 +66,16 @@ func tenantWithRepos(repos ...string) *config.Config {
 	return &config.Config{Tenants: map[string]config.Tenant{"acme": t}}
 }
 
-func TestCodeHostStreamRestartsOnRepoChange(t *testing.T) {
+// startCodeHost runs the code host ingest against host; stop cancels it and
+// waits until runCodeHost returned. Events go to the returned channel.
+func startCodeHost(t *testing.T, initial *config.Config, host *recordingCodeHost) (*mutableSource, *config.Sync, <-chan string, func()) {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	src := &mutableSource{cfg: tenantWithRepos("g/b")}
+	src := &mutableSource{cfg: initial}
 	cfg, err := config.NewSync(context.Background(), src, time.Hour, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := &recordingCodeHost{}
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	pluginv1.RegisterCodeHostAdapterServer(srv, host)
@@ -90,12 +96,26 @@ func TestCodeHostStreamRestartsOnRepoChange(t *testing.T) {
 			return nil
 		}, log, time.Millisecond, 10*time.Millisecond)
 	}()
-	t.Cleanup(func() {
-		cancel()
-		<-done
-		reg.Close()
-		srv.Stop()
-	})
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Error("code host ingest did not stop on cancel")
+			}
+			reg.Close()
+			srv.Stop()
+		})
+	}
+	t.Cleanup(stop)
+	return src, cfg, got, stop
+}
+
+func TestCodeHostStreamRestartsOnRepoChange(t *testing.T) {
+	host := &recordingCodeHost{}
+	src, cfg, got, _ := startCodeHost(t, tenantWithRepos("g/b"), host)
 	eventually(t, "first stream", func() bool { return len(host.snapshot()) == 1 })
 	if g := <-got; g != "acme/ev-1" {
 		t.Fatalf("event = %s, want acme/ev-1", g)
@@ -111,5 +131,17 @@ func TestCodeHostStreamRestartsOnRepoChange(t *testing.T) {
 	eventually(t, "first stream cancelled", func() bool { return isClosed(host.snapshot()[0].cancelled) })
 	if calls := host.snapshot(); !slices.Equal(calls[0].keys, []string{"g/b"}) || calls[0].cred != "ch" {
 		t.Fatalf("first stream keys=%v cred=%q", calls[0].keys, calls[0].cred)
+	}
+}
+
+func TestCodeHostNoStreamWithoutReviewEvents(t *testing.T) {
+	host := &recordingCodeHost{noReviews: true}
+	_, _, _, stop := startCodeHost(t, tenantWithRepos("g/b"), host)
+	eventually(t, "capabilities checked", func() bool { return host.capsCalls.Load() >= 1 })
+
+	stop()
+
+	if n := len(host.snapshot()); n != 0 {
+		t.Fatalf("StreamEvents called %d times, want 0", n)
 	}
 }

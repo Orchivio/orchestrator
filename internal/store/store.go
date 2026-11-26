@@ -342,4 +342,3 @@ func deref(id *uuid.UUID) uuid.UUID {
 	}
 	return *id
 }
-
