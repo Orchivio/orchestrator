@@ -472,7 +472,7 @@ components:
         milestones: {type: array, items: {type: string}}
         statusMap:
           type: object
-          description: Tracker status name per run state; states without an entry leave the status alone
+          description: Tracker status name per run state; states without an entry leave the status alone. A blank (whitespace-only) name is rejected. `cancelled` is accepted but currently never emitted, since runs cannot be cancelled yet
           propertyNames: {enum: [running, waiting_for_input, pushing, succeeded, failed, cancelled]}
           additionalProperties: {type: string, minLength: 1}
         reviewTrigger: {type: string, enum: [mention, any], default: mention}

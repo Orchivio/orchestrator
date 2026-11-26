@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 )
 
 var (
@@ -93,7 +94,7 @@ func validateStatusMap(p Project, add func(field, format string, args ...any)) {
 		switch {
 		case !slices.Contains(states, state):
 			add("statusMap."+state, "unknown state %q", state)
-		case status == "":
+		case strings.TrimSpace(status) == "":
 			add("statusMap."+state, "status name must not be empty")
 		}
 	}

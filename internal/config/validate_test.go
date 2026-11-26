@@ -31,6 +31,14 @@ func TestStatusMapRejectsEmptyValue(t *testing.T) {
 	}
 }
 
+func TestStatusMapRejectsWhitespaceValue(t *testing.T) {
+	tn, p := validProject()
+	p.StatusMap = map[string]string{"running": " \t"}
+	if got := fieldsOf(ValidateProject(tn, p)); len(got) != 1 || got[0] != "statusMap.running" {
+		t.Fatalf("fields = %v", got)
+	}
+}
+
 func TestStatusMapAcceptsRunStates(t *testing.T) {
 	tn, p := validProject()
 	p.StatusMap = map[string]string{"running": "In Progress", "waiting_for_input": "Blocked", "pushing": "In Progress",
