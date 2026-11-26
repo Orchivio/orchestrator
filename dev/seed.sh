@@ -49,11 +49,23 @@ seed_beta() {
   local jira_adapter="${ORCHIVIO_SEED_JIRA_ADAPTER:-jira-cloud}" token="${ORCHIVIO_SEED_JIRA_TOKEN:-}"
   local jira_key="${ORCHIVIO_SEED_JIRA_KEY:-}" gl_token="${ORCHIVIO_SEED_GITLAB_TOKEN:-}"
   local gl_path="${ORCHIVIO_SEED_GITLAB_PATH:-}" gl_repo="${ORCHIVIO_SEED_GITLAB_REPO:-}"
+  local site="${ORCHIVIO_SEED_JIRA_SITE_URL:-}" jira_email="${ORCHIVIO_SEED_JIRA_EMAIL:-}"
   if [[ -z "$token$jira_key$gl_token$gl_path$gl_repo" ]]; then return 0; fi
   if [[ -z "$token" || -z "$jira_key" || -z "$gl_token" || -z "$gl_path" || -z "$gl_repo" ]]; then
     echo "Mandant beta übersprungen: ORCHIVIO_SEED_JIRA_{TOKEN,KEY} und ORCHIVIO_SEED_GITLAB_{PATH,TOKEN,REPO} müssen alle gesetzt sein"
     return 0
   fi
+  case "$jira_adapter" in
+    jira-cloud)
+      if [[ -z "$site" || -z "$jira_email" ]]; then
+        echo "Mandant beta übersprungen: jira-cloud braucht ORCHIVIO_SEED_JIRA_SITE_URL und ORCHIVIO_SEED_JIRA_EMAIL"
+        return 0
+      fi ;;
+    jira-dc) ;;
+    *)
+      echo "Mandant beta übersprungen: ORCHIVIO_SEED_JIRA_ADAPTER muss jira-cloud oder jira-dc sein"
+      return 0 ;;
+  esac
   local slug=beta code
   code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" "$api/tenants/$slug")"
   if [[ "$code" == 404 ]]; then
@@ -79,17 +91,22 @@ seed_beta() {
     fi
   }
   local jira_fields
-  jira_fields="$(jq -n --arg token "$token" --arg site "${ORCHIVIO_SEED_JIRA_SITE_URL:-}" --arg email "${ORCHIVIO_SEED_JIRA_EMAIL:-}" \
-    'if $site == "" then {token: $token} else {siteUrl: $site, email: $email, token: $token} end')"
+  jira_fields="$(jq -n --arg adapter "$jira_adapter" --arg token "$token" --arg site "$site" --arg email "$jira_email" \
+    --arg jql "${ORCHIVIO_SEED_JIRA_JQL:-}" \
+    '(if $adapter == "jira-cloud" then {siteUrl: $site, email: $email, token: $token} else {token: $token} end)
+     + (if $jql == "" then {} else {jql: $jql} end)')"
   connect_form tracker "$jira_adapter" "$jira_fields"
   connect_form codehost gitlab "$(jq -n --arg path "$gl_path" --arg token "$gl_token" '{path: $path, token: $token}')"
   if [[ -z "$(call GET "/tenants/$slug/projects" | jq -r --arg key "$jira_key" '[.[] | select(.trackerKey == $key)][0].id // empty')" ]]; then
     call POST "/tenants/$slug/projects" "$(jq -n \
-      --arg key "$jira_key" --arg profile "$profile" --arg repo "$gl_repo" --arg email "$email" '{
+      --arg key "$jira_key" --arg profile "$profile" --arg repo "$gl_repo" --arg email "$email" \
+      --arg gitlab_user "${ORCHIVIO_SEED_GITLAB_USER:-}" --arg jira_user "${ORCHIVIO_SEED_JIRA_USER:-}" '
+      ([$email] + (if $jira_user == "" then [] else ["jira:" + $jira_user] end)
+                + (if $gitlab_user == "" then [] else ["gitlab:" + $gitlab_user] end)) as $who | {
         name: "demo-jira", trackerKey: $key, profileId: $profile,
         repos: [{slug: $repo, baseBranch: "main", allowedPaths: [""]}],
         classifier: {taskLabels: ["orchivio:aufgabe"], questionLabels: ["orchivio:frage"], defaultRepo: $repo},
-        roles: {questions: [$email], tasks: [$email]},
+        roles: {questions: $who, tasks: $who},
         statusMap: {running: "In Progress", succeeded: "In Review", failed: "To Do"},
         reviewTrigger: "mention",
         maxDiffLines: 500}')" >/dev/null
@@ -99,7 +116,14 @@ seed_beta() {
   fi
 }
 
-seed_beta
+# beta darf acme nie verhindern: eigene Subshell mit set -e, ein Fehler warnt nur.
+set +e
+(set -e; seed_beta)
+beta_rc=$?
+set -e
+if ((beta_rc != 0)); then
+  echo "Warnung: Mandant beta nicht vollständig angelegt (Exit $beta_rc); acme wird trotzdem angelegt" >&2
+fi
 
 status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $ORCHIVIO_BOOTSTRAP_TOKEN" "$api/tenants/$tenant")"

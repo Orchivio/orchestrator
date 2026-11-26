@@ -68,6 +68,7 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}
       SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+      SSL_CERT_DIR: ${SSL_CERT_DIR:-}
 
   adapter-jira-dc:
     image: ghcr.io/orchivio/adapter-jira:${ORCHIVIO_VERSION:-main}
@@ -81,6 +82,7 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}
       SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+      SSL_CERT_DIR: ${SSL_CERT_DIR:-}
 
   adapter-gitlab:
     image: ghcr.io/orchivio/adapter-gitlab:${ORCHIVIO_VERSION:-main}
@@ -93,6 +95,7 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}
       SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+      SSL_CERT_DIR: ${SSL_CERT_DIR:-}
 
   # Not included: jira-dc / gitlab-ce containers (large images). Point JIRA_URL
   # and GITLAB_URL at existing instances instead.
