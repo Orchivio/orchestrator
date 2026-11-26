@@ -70,7 +70,7 @@ func (CodeHostEvent_Kind) EnumDescriptor() ([]byte, []int) {
 
 type IssueRepoCredentialsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repos         []string               `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"` // "owner/name"
+	Repos         []string               `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"` // full repo paths at the code host, e.g. "group/sub/project"
 	Write         bool                   `protobuf:"varint,2,opt,name=write,proto3" json:"write,omitempty"`
 	Credentials   []*Credential          `protobuf:"bytes,3,rep,name=credentials,proto3" json:"credentials,omitempty"`
 	unknownFields protoimpl.UnknownFields

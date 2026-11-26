@@ -21,7 +21,7 @@ service CodeHostAdapter {
 }
 
 message IssueRepoCredentialsRequest {
-  repeated string repos = 1; // "owner/name"
+  repeated string repos = 1; // full repo paths at the code host, e.g. "group/sub/project"
   bool write = 2;
   repeated Credential credentials = 3;
 }

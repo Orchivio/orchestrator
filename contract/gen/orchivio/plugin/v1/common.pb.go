@@ -706,7 +706,7 @@ func (*DisconnectResponse) Descriptor() ([]byte, []int) {
 type CheckAccessRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Credentials   []*Credential          `protobuf:"bytes,1,rep,name=credentials,proto3" json:"credentials,omitempty"`
-	Items         []string               `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"` // tracker: team keys; codehost: "owner/name"
+	Items         []string               `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"` // tracker: team keys; codehost: full repo path at the code host, e.g. "group/sub/project"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

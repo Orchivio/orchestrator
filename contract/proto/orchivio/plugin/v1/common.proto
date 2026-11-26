@@ -74,7 +74,7 @@ message DisconnectResponse {}
 
 message CheckAccessRequest {
   repeated Credential credentials = 1;
-  repeated string items = 2; // tracker: team keys; codehost: "owner/name"
+  repeated string items = 2; // tracker: team keys; codehost: full repo path at the code host, e.g. "group/sub/project"
 }
 
 message CheckAccessResponse {
