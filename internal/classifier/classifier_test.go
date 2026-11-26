@@ -128,21 +128,33 @@ func TestIdentitiesListsEmailAndUsername(t *testing.T) {
 
 func TestIdentitiesAppendsSystemID(t *testing.T) {
 	got := Identities("jira", &pluginv1.Actor{Id: "5b10", Email: "a@b.de", Username: "jdoe"})
-	if !reflect.DeepEqual(got, []string{"a@b.de", "jira:jdoe", "jira:5b10"}) {
+	if !reflect.DeepEqual(got, []string{"a@b.de", "jira:jdoe", "jira:id:5b10"}) {
 		t.Fatalf("got %v", got)
 	}
 }
 
-func TestIdentitiesSkipsIDEqualToUsername(t *testing.T) {
-	got := Identities("gitlab", &pluginv1.Actor{Id: "jdoe", Username: "jdoe"})
-	if !reflect.DeepEqual(got, []string{"gitlab:jdoe"}) {
-		t.Fatalf("got %v", got)
+func TestIdentitiesSkipsReservedIDPrefixUsername(t *testing.T) {
+	got := Identities("acme", &pluginv1.Actor{Username: "ID:12345"})
+	if len(got) != 0 {
+		t.Fatalf("got %v, want no identity from an id:-prefixed username", got)
+	}
+}
+
+func TestRoleIDDoesNotMatchEqualUsername(t *testing.T) {
+	p := fixture()
+	p.Roles.Tasks = []string{"acme:12345"} // username entry of another user
+	if HasAnyRole(p, Identities("acme", &pluginv1.Actor{Id: "12345", Username: "mallory"})) {
+		t.Fatal("an id must not match a username entry")
+	}
+	p.Roles.Tasks = []string{"acme:id:12345"}
+	if HasAnyRole(p, Identities("acme", &pluginv1.Actor{Id: "999", Username: "12345"})) {
+		t.Fatal("a username must not match an id entry")
 	}
 }
 
 func TestRoleMatchesSystemID(t *testing.T) {
 	p := fixture()
-	p.Roles.Tasks = []string{"jira:5b10"}
+	p.Roles.Tasks = []string{"jira:id:5b10"}
 	a := &pluginv1.Actor{Id: "5b10", Username: "renamed"}
 	if d := Classify(p, Input{Trigger: "assigned", Actors: Identities("jira", a)}); d.Kind != "task" {
 		t.Fatalf("got %+v", d)

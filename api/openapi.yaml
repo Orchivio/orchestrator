@@ -454,8 +454,8 @@ components:
       type: object
       additionalProperties: false
       properties:
-        questions: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<username> / <system>:<id> identities, e.g. acme:jdoe or acme:5b10. Prefer <system>:<id>: ids are immutable, usernames and e-mails can change"}
-        tasks: {type: array, items: {type: string}, description: "E-mail addresses or <system>:<username> / <system>:<id> identities, e.g. acme:jdoe or acme:5b10. Prefer <system>:<id>: ids are immutable, usernames and e-mails can change"}
+        questions: {type: array, items: {type: string}, description: "E-mail addresses, <system>:<username> or <system>:id:<id> identities, e.g. acme:jdoe or acme:id:12345. Prefer <system>:id:<id>: ids are immutable, usernames and e-mails can change"}
+        tasks: {type: array, items: {type: string}, description: "E-mail addresses, <system>:<username> or <system>:id:<id> identities, e.g. acme:jdoe or acme:id:12345. Prefer <system>:id:<id>: ids are immutable, usernames and e-mails can change"}
     Project:
       type: object
       additionalProperties: false
