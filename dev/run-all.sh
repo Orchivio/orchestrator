@@ -11,9 +11,16 @@ if [[ -f "$here/.env" ]]; then
   set +a
 fi
 
+# Ohne Angabe wie bisher Linear und GitHub; Arbeitslaptop: COMPOSE_PROFILES=jira-gitlab.
+export COMPOSE_PROFILES="${COMPOSE_PROFILES:-linear-github}"
+
+required=(ORCHIVIO_SECRET_KEY ORCHIVIO_BOOTSTRAP_TOKEN)
+if [[ ",$COMPOSE_PROFILES," == *,linear-github,* ]]; then
+  required+=(LINEAR_CLIENT_ID LINEAR_CLIENT_SECRET_REF GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY
+    GITHUB_APP_PRIVATE_KEY_REF GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET_REF)
+fi
 missing=()
-for v in ORCHIVIO_SECRET_KEY ORCHIVIO_BOOTSTRAP_TOKEN LINEAR_CLIENT_ID LINEAR_CLIENT_SECRET_REF \
-  GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_APP_PRIVATE_KEY_REF GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET_REF; do
+for v in "${required[@]}"; do
   [[ -n "${!v:-}" ]] || missing+=("$v")
 done
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
