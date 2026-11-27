@@ -109,8 +109,22 @@ services:
     volumes:
       - ${ORCHIVIO_CA_FILE:-/dev/null}:/etc/orchivio/ca.pem:ro
 
-  # Not included: jira-dc / gitlab-ce containers (large images). Point JIRA_URL
-  # and GITLAB_URL at existing instances instead.
+  # Local Jira Data Center for testing (profile local-jira). Set
+  # JIRA_URL=http://jira-dc:8080 so adapter-jira-dc reaches it on the compose
+  # network; the browser uses http://localhost:${JIRA_LOCAL_PORT:-8089}.
+  # Data (setup, users, license) survives restarts in the jira-data volume.
+  # GitLab CE is not included (large image); point GITLAB_URL at an instance.
+  jira-dc:
+    image: ${JIRA_IMAGE:-atlassian/jira-software:11}
+    profiles: [local-jira]
+    environment:
+      JVM_MINIMUM_MEMORY: 1024m
+      JVM_MAXIMUM_MEMORY: ${JIRA_JVM_MAX:-2048m}
+      ATL_TOMCAT_PORT: "8080"
+    ports:
+      - "127.0.0.1:${JIRA_LOCAL_PORT:-8089}:8080"
+    volumes:
+      - jira-data:/var/atlassian/application-data/jira
 
   # Credential/egress proxy: the only container on orchivio-sandbox with a way out.
   proxy:
@@ -166,3 +180,4 @@ networks:
 
 volumes:
   orchivio-pgdata:
+  jira-data:

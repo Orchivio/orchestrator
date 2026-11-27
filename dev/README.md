@@ -128,7 +128,32 @@ dev/run-all.sh
 
 Nur Jira und GitLab ohne Linear/GitHub: siehe [Arbeitslaptop](#arbeitslaptop-jira-data-center-und-gitlab). `dev/stop-all.sh` stoppt immer alle Profile.
 
-`JIRA_URL` (nur Data Center) und `GITLAB_URL` stehen in der `.env`. Container `jira-dc` und `gitlab-ce` sind bewusst nicht Teil des Stacks (große Images); es werden bestehende Instanzen genutzt.
+`JIRA_URL` (nur Data Center) und `GITLAB_URL` stehen in der `.env`. GitLab CE ist nicht Teil des Stacks (großes Image); dafür eine bestehende Instanz nutzen. Ein lokales Jira Data Center gibt es im Profil `local-jira` (siehe unten).
+
+### Lokales Jira Data Center (Profil `local-jira`)
+
+Zum Testen mit beliebig vielen Nutzern startet das Profil `local-jira` den Container `jira-dc` (Image `atlassian/jira-software:11`, amd64 und arm64; anderes Image über `JIRA_IMAGE`). Einrichtung, Nutzer und Lizenz liegen im Volume `jira-data` und überleben Neustarts. Jira braucht etwa 3–4 GB RAM: die Podman-Machine mit mindestens 8 GB betreiben (`podman machine stop && podman machine set --memory 8192 && podman machine start`).
+
+1. In `dev/.env` ergänzen:
+
+   ```
+   COMPOSE_PROFILES=linear-github,jira-gitlab,local-jira
+   ORCHIVIO_EXTRA_ADAPTERS=,jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401
+   JIRA_URL=http://jira-dc:8080
+   ```
+
+   Ohne Linear/GitHub `linear-github` weglassen und `ORCHIVIO_ADAPTERS=jira-dc=adapter-jira-dc:7302,gitlab=adapter-gitlab:7401` statt `ORCHIVIO_EXTRA_ADAPTERS` setzen (siehe Arbeitslaptop). `adapter-jira-cloud` läuft im Profil `jira-gitlab` mit, wird aber nicht genutzt.
+2. `dev/run-all.sh`. Der erste Start von Jira dauert einige Minuten (`podman compose -f dev/compose.yaml logs -f jira-dc`).
+3. Im Browser `http://localhost:8089` öffnen (anderer Port über `JIRA_LOCAL_PORT`):
+   - Einrichtung „selbst einrichten“, eingebaute Testdatenbank wählen (nur zum Testen).
+   - Lizenz: eine Timebomb-Lizenz für Jira Software Data Center von developer.atlassian.com eintragen. Timebomb-Lizenzen laufen nach kurzer Zeit ab (Stunden); danach unter Administration → Anwendungen → Versionen & Lizenzen neu eintragen. Für längere Tests eine 30-Tage-Testlizenz über my.atlassian.com nehmen.
+   - Basis-URL `http://localhost:8089` lassen (der Adapter erreicht Jira intern über `JIRA_URL`; Data Center prüft die Basis-URL in Webhooks nicht).
+4. Als Admin Nutzer anlegen (Administration → Benutzerverwaltung): einen technischen Nutzer für Orchivio (z. B. `orchivio`) und beliebig viele weitere zum Zuweisen und Kommentieren. Ein Projekt anlegen, z. B. Key `ORV`; der Workflow braucht die Status aus der `statusMap` (Standard: „In Progress“, „In Review“, „To Do“), sonst die `statusMap` des Projekts anpassen.
+5. Als technischer Nutzer anmelden → Profil → Persönliche Zugriffstoken → Token erzeugen.
+6. Seed-Werte in `dev/.env`: `ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc`, `ORCHIVIO_SEED_JIRA_TOKEN=<PAT>`, `ORCHIVIO_SEED_JIRA_KEY=ORV`, `ORCHIVIO_SEED_JIRA_USER=<dein Jira-Nutzername>` (Rolle `jira:<name>`), dazu die GitLab-Werte. Dann `dev/seed.sh`.
+7. Test: ein Ticket im Projekt dem technischen Nutzer zuweisen (als anderer Nutzer, nicht als `orchivio` selbst — dessen eigene Aktionen ignoriert Orchivio) und der Checkliste unten folgen.
+
+Daten löschen und neu anfangen: `podman volume rm orchivio_jira-data` bei gestopptem Stack (nur dieses Volume; nie `down -v`, das löscht auch die Orchivio-Datenbank).
 
 `seed.sh` legt zusätzlich den Mandanten `beta` an (Tracker `jira-cloud`, oder `ORCHIVIO_SEED_JIRA_ADAPTER=jira-dc`; Code-Host `gitlab`), verbindet beide per Formular (`POST /api/v1/tenants/beta/connections/{adapter}/form`, Body `{"fields": {...}}`) und legt das Projekt `demo-jira` mit `statusMap` `{"running":"In Progress","succeeded":"In Review","failed":"To Do"}` an. Das passiert nur, wenn `ORCHIVIO_SEED_JIRA_{TOKEN,KEY}` und `ORCHIVIO_SEED_GITLAB_{PATH,TOKEN,REPO}` gesetzt sind (bei `jira-cloud` zusätzlich `ORCHIVIO_SEED_JIRA_{SITE_URL,EMAIL}`; die Formularfelder richten sich nach dem Adapter, bei `jira-dc` nur `token`). Optional: `ORCHIVIO_SEED_JIRA_JQL` setzt den JQL-Filter der Verbindung; `ORCHIVIO_SEED_JIRA_USER` und `ORCHIVIO_SEED_GITLAB_USER` ergänzen die Rollen um `jira:<user>` bzw. `gitlab:<user>` (am besten die ID als `id:<id>`, z. B. `ORCHIVIO_SEED_GITLAB_USER=id:12345`, siehe oben). Rollen werden nur beim Anlegen des Projekts gesetzt. Schlägt beta fehl, gibt `seed.sh` eine Warnung aus und macht mit `acme` weiter. `acme` (Linear/GitHub) legt `seed.sh` nur an, wenn das Profil `linear-github` aktiv ist; sonst meldet es „Mandant acme übersprungen“. Tokens stehen nur in der `.env` und werden nie ausgegeben.
 
